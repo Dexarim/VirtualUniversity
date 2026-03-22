@@ -1,6 +1,6 @@
 # Игнорируем виртуальное окружение
 node_modules/
-
+dist/
 
 
 
@@ -8,6 +8,7 @@ node_modules/
 # Игнорируем IDE-шные файлы (VSCode
 .vscode/
 .idea/
+
 
 # Игнорируем DockerFile
 

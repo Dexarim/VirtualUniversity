@@ -1,6 +1,16 @@
 // ui/PanoramaOverlay.js
 import * as THREE from "three";
 import { InfoPanel } from "./InfoPanel.js";
+import {
+  applyStyles,
+  buttonStyles,
+  designTokens,
+  ensureDesignSystem,
+  overlayStyles,
+  panelStyles,
+  tagStyles,
+} from "./designSystem.js";
+import { localizeDataValue, subscribeLanguageChange, t } from "./i18n.js";
 
 /*
   PanoramaOverlay
@@ -12,6 +22,8 @@ import { InfoPanel } from "./InfoPanel.js";
 
 export class PanoramaOverlay {
   constructor(options = {}) {
+    ensureDesignSystem();
+
     this.options = {
       radius: 500,
       transitionMs: 300,
@@ -22,10 +34,8 @@ export class PanoramaOverlay {
 
     // overlay
     this.overlay = document.createElement("div");
-    Object.assign(this.overlay.style, {
-      position: "fixed",
-      inset: "0",
-      background: "rgba(0,0,0,0.85)",
+    applyStyles(this.overlay, {
+      ...overlayStyles(),
       zIndex: "999999",
       display: "none",
       alignItems: "center",
@@ -34,32 +44,37 @@ export class PanoramaOverlay {
 
     // inner area (80% x 80% -> 10% margin all sides by default)
     this.inner = document.createElement("div");
-    Object.assign(this.inner.style, {
-      width: "80%",
-      height: "80%",
-      background: "#000",
-      borderRadius: "8px",
+    applyStyles(this.inner, {
+      ...panelStyles({
+        background: "rgba(32, 24, 17, 0.94)",
+        padding: "0",
+      }),
+      width: "min(1200px, calc(100vw - 64px))",
+      height: "min(760px, calc(100vh - 72px))",
       overflow: "hidden",
       position: "relative",
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
+      borderRadius: "26px",
+      boxShadow: "0 34px 80px rgba(22, 14, 8, 0.34)",
     });
     this.overlay.appendChild(this.inner);
 
     // canvas holder
     this.canvasHolder = document.createElement("div");
-    Object.assign(this.canvasHolder.style, {
+    applyStyles(this.canvasHolder, {
       position: "absolute",
       inset: "0",
       overflow: "hidden",
       touchAction: "none",
+      borderRadius: "26px",
     });
     this.inner.appendChild(this.canvasHolder);
 
     // hotspot layer (DOM on top)
     this.hotspotLayer = document.createElement("div");
-    Object.assign(this.hotspotLayer.style, {
+    applyStyles(this.hotspotLayer, {
       position: "absolute",
       inset: "0",
       pointerEvents: "none",
@@ -68,7 +83,7 @@ export class PanoramaOverlay {
 
     // glow layer (floor + ceiling)
     this.glowLayer = document.createElement("div");
-    Object.assign(this.glowLayer.style, {
+    applyStyles(this.glowLayer, {
       position: "absolute",
       inset: "0",
       pointerEvents: "none",
@@ -79,7 +94,7 @@ export class PanoramaOverlay {
 
     // floor glow
     this.floorGlow = document.createElement("div");
-    Object.assign(this.floorGlow.style, {
+    applyStyles(this.floorGlow, {
       position: "absolute",
       bottom: "0",
       left: "0",
@@ -94,7 +109,7 @@ export class PanoramaOverlay {
 
     // ceiling glow
     this.ceilingGlow = document.createElement("div");
-    Object.assign(this.ceilingGlow.style, {
+    applyStyles(this.ceilingGlow, {
       position: "absolute",
       top: "0",
       left: "0",
@@ -113,59 +128,78 @@ export class PanoramaOverlay {
       onBack: null,
       showBackBtn: false,
     });
+    const infoPanelEl = this.infoPanel.getElement?.();
+    if (infoPanelEl) {
+      infoPanelEl.style.left = "24px";
+      infoPanelEl.style.bottom = "24px";
+      infoPanelEl.style.maxWidth = "360px";
+      infoPanelEl.style.zIndex = "20";
+    }
+
+    this.projectionBadge = document.createElement("div");
+    applyStyles(this.projectionBadge, {
+      ...tagStyles(),
+      position: "absolute",
+      top: "22px",
+      left: "22px",
+      zIndex: "20",
+      background: "rgba(255, 250, 242, 0.92)",
+      boxShadow: "0 10px 24px rgba(23, 14, 8, 0.18)",
+    });
+    this.inner.appendChild(this.projectionBadge);
 
     // controls: close / prev / next
     this.closeBtn = document.createElement("button");
     this.closeBtn.innerText = "✕";
-    Object.assign(this.closeBtn.style, {
+    applyStyles(this.closeBtn, {
+      ...buttonStyles("secondary"),
       position: "absolute",
-      top: "12px",
-      right: "12px",
-      zIndex: 1000,
-      padding: "6px 10px",
-      background: "rgba(0,0,0,0.5)",
-      color: "#fff",
-      border: "1px solid #fff",
-      borderRadius: "6px",
-      cursor: "pointer",
+      top: "18px",
+      right: "18px",
+      zIndex: "1000",
+      minWidth: "108px",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      background: "rgba(255, 250, 242, 0.9)",
     });
+    this.closeBtn.textContent = "Закрыть";
     this.inner.appendChild(this.closeBtn);
 
     this.prevBtn = document.createElement("button");
     this.prevBtn.innerText = "‹";
-    Object.assign(this.prevBtn.style, {
+    applyStyles(this.prevBtn, {
+      ...buttonStyles("secondary"),
       position: "absolute",
-      left: "8px",
+      left: "18px",
       top: "50%",
       transform: "translateY(-50%)",
-      zIndex: 900,
-      padding: "6px 10px",
-      background: "rgba(0,0,0,0.4)",
-      color: "#fff",
-      border: "1px solid #fff",
-      borderRadius: "6px",
-      cursor: "pointer",
+      zIndex: "900",
     });
+    this.prevBtn.textContent = "Назад";
     // this.inner.appendChild(this.prevBtn);
 
     this.nextBtn = document.createElement("button");
     this.nextBtn.innerText = "›";
-    Object.assign(this.nextBtn.style, {
+    applyStyles(this.nextBtn, {
+      ...buttonStyles("secondary"),
       position: "absolute",
-      right: "8px",
+      right: "18px",
       top: "50%",
       transform: "translateY(-50%)",
-      zIndex: 900,
-      padding: "6px 10px",
-      background: "rgba(0,0,0,0.4)",
-      color: "#fff",
-      border: "1px solid #fff",
-      borderRadius: "6px",
-      cursor: "pointer",
+      zIndex: "900",
     });
+    this.nextBtn.textContent = "Далее";
     // this.inner.appendChild(this.nextBtn);
 
     document.body.appendChild(this.overlay);
+    this._ensureStyles();
+    this._wireButtonHover(this.closeBtn);
+    this._wireButtonHover(this.prevBtn);
+    this._wireButtonHover(this.nextBtn);
+    this._unsubscribeLanguage = subscribeLanguageChange(() =>
+      this.refreshLanguage()
+    );
 
     // listeners
     this.closeBtn.addEventListener("click", () => this.close());
@@ -186,6 +220,145 @@ export class PanoramaOverlay {
     this._zoomMin = 25;
     this._zoomMax = 100;
     this._onKey = null;
+    this.refreshLanguage();
+  }
+
+  _ensureStyles() {
+    if (document.getElementById("vt-panorama-overlay-styles")) {
+      this.inner.classList.add("vt-panorama-inner");
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "vt-panorama-overlay-styles";
+    style.textContent = `
+      .pano-hotspot {
+        box-shadow: 0 12px 26px rgba(30, 20, 10, 0.24);
+      }
+
+      .pano-hotspot:hover {
+        transform: translate(-50%, -50%) translateY(-1px);
+      }
+
+      @media (max-width: 820px) {
+        .vt-panorama-inner {
+          width: calc(100vw - 28px) !important;
+          height: calc(100vh - 28px) !important;
+          border-radius: 22px !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    this.inner.classList.add("vt-panorama-inner");
+  }
+
+  _wireButtonHover(button) {
+    if (!button) return;
+
+    button.addEventListener("mouseenter", () => {
+      button.style.background = "rgba(247, 239, 229, 0.98)";
+      button.style.borderColor = "rgba(157, 107, 53, 0.28)";
+      button.style.transform = button.style.transform.includes("translateY(-50%)")
+        ? "translateY(calc(-50% - 1px))"
+        : "translateY(-1px)";
+    });
+
+    button.addEventListener("mouseleave", () => {
+      if (button === this.closeBtn) {
+        applyStyles(button, {
+          ...buttonStyles("secondary"),
+          position: "absolute",
+          top: "18px",
+          right: "18px",
+          zIndex: "1000",
+          minWidth: "108px",
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "rgba(255, 250, 242, 0.9)",
+        });
+        return;
+      }
+
+      if (button === this.prevBtn) {
+        applyStyles(button, {
+          ...buttonStyles("secondary"),
+          position: "absolute",
+          left: "18px",
+          top: "50%",
+          transform: "translateY(-50%)",
+          zIndex: "900",
+        });
+        return;
+      }
+
+      if (button === this.nextBtn) {
+        applyStyles(button, {
+          ...buttonStyles("secondary"),
+          position: "absolute",
+          right: "18px",
+          top: "50%",
+          transform: "translateY(-50%)",
+          zIndex: "900",
+        });
+      }
+    });
+  }
+
+  _setTextureColorSpace(texture) {
+    if (!texture) return;
+
+    if ("colorSpace" in texture && THREE.SRGBColorSpace) {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      return;
+    }
+
+    if ("encoding" in texture) {
+      texture.encoding = 3001;
+    }
+  }
+
+  refreshLanguage() {
+    this.closeBtn.textContent = t("common_close");
+    this.prevBtn.textContent = t("common_previous");
+    this.nextBtn.textContent = t("common_next");
+
+    if (this.sequence) {
+      this.sequence = this.sequence.map((pano) => ({
+        ...pano,
+        title: localizeDataValue(pano._originalTitle || pano.title || ""),
+        name: localizeDataValue(
+          pano._originalName || pano.name || pano.title || ""
+        ),
+        description: localizeDataValue(
+          pano._originalDescription || pano.description || ""
+        ),
+        hotspots: (pano.hotspots || []).map((hotspot) => ({
+          ...hotspot,
+          label: localizeDataValue(
+            hotspot._originalLabel || hotspot.label || ""
+          ),
+        })),
+      }));
+
+      const current = this.sequence[this.currentIndex];
+      if (current?.name || current?.description) {
+        this.infoPanel.show({
+          name: current.name || current.title || t("common_object"),
+          description: current.description || "",
+        });
+      }
+      this._updateHotspotsForCurrent();
+    }
+
+    if (!this.sequence) {
+      this.projectionBadge.textContent = t("panorama_badge_default");
+      return;
+    }
+
+    this.projectionBadge.textContent = this._isSphereProjection(this._currentProjection)
+      ? t("panorama_badge_sphere")
+      : t("panorama_badge_cylinder");
   }
 
   // Открыть одиночную панораму
@@ -197,6 +370,7 @@ export class PanoramaOverlay {
   async openSequence(panoramas = [], startIndex = 0) {
     this.overlay.style.display = "flex";
     this._setGlowVisibilityForProjection(this._currentProjection);
+    this.projectionBadge.textContent = t("panorama_badge_default");
 
     // нормализуем вход
     this.sequence = panoramas.map((p, i) =>
@@ -433,6 +607,10 @@ export class PanoramaOverlay {
     const projection = this._resolveProjectionForPano(pano);
     this._currentProjection = projection;
     this._setGlowVisibilityForProjection(projection);
+    this.projectionBadge.textContent =
+      projection === "sphere"
+        ? t("panorama_badge_sphere")
+        : t("panorama_badge_cylinder");
 
     let tex;
     try {
@@ -449,9 +627,7 @@ export class PanoramaOverlay {
       return;
     }
 
-    try {
-      tex.encoding = THREE.sRGBEncoding;
-    } catch (e) {}
+    this._setTextureColorSpace(tex);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
 
@@ -611,7 +787,7 @@ export class PanoramaOverlay {
     if (mesh.material.color) mesh.material.color.set(0xffffff);
     mesh.material.side = THREE.DoubleSide;
     mesh.material.needsUpdate = true;
-    tex.encoding = THREE.sRGBEncoding;
+    this._setTextureColorSpace(tex);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
     tex.repeat.x = 1;
@@ -660,13 +836,17 @@ export class PanoramaOverlay {
         position: "absolute",
         transform: "translate(-50%,-50%)",
         pointerEvents: "auto",
-        background: "rgba(255,255,255,0.9)",
-        padding: "6px 8px",
-        borderRadius: "6px",
-        border: "1px solid rgba(0,0,0,0.15)",
+        background: "rgba(255, 250, 242, 0.94)",
+        color: designTokens.textPrimary,
+        padding: "8px 12px",
+        borderRadius: "12px",
+        border: designTokens.inputBorder,
         cursor: "pointer",
         whiteSpace: "nowrap",
         fontSize: "13px",
+        fontWeight: "600",
+        transition:
+          "transform 0.2s ease, background 0.2s ease, border-color 0.2s ease",
       });
       el.addEventListener("click", (ev) => {
         ev.stopPropagation();
@@ -674,6 +854,14 @@ export class PanoramaOverlay {
           const targetIndex = this.sequence.findIndex((p) => p.id === hs.to);
           if (targetIndex >= 0) this._gotoIndex(targetIndex);
         }
+      });
+      el.addEventListener("mouseenter", () => {
+        el.style.background = "rgba(247, 239, 229, 0.98)";
+        el.style.borderColor = "rgba(157, 107, 53, 0.28)";
+      });
+      el.addEventListener("mouseleave", () => {
+        el.style.background = "rgba(255, 250, 242, 0.94)";
+        el.style.borderColor = "rgba(129, 109, 87, 0.24)";
       });
       this.hotspotLayer.appendChild(el);
       hs._el = el;

@@ -1,5 +1,11 @@
-// ui/Inspector.js
-// Создаёт небольшой overlay-инспектор (имя, описание, кнопки назад/редактировать)
+import {
+  applyStyles,
+  buttonStyles,
+  ensureDesignSystem,
+  panelStyles,
+  subtitleStyles,
+  titleStyles,
+} from "./designSystem.js";
 
 export class Inspector {
   constructor({
@@ -7,45 +13,55 @@ export class Inspector {
     onBack = () => {},
     onEdit = null,
   } = {}) {
+    ensureDesignSystem();
+
     this.onBack = onBack;
     this.onEdit = onEdit;
 
     this.el = document.createElement("div");
-    this.el.style.position = "absolute";
-    this.el.style.left = "20px";
-    this.el.style.bottom = "20px";
-    this.el.style.minWidth = "220px";
-    this.el.style.background = "rgba(0,0,0,0.6)";
-    this.el.style.color = "#fff";
-    this.el.style.padding = "12px";
-    this.el.style.borderRadius = "8px";
-    this.el.style.fontFamily = "sans-serif";
-    this.el.style.zIndex = 1000;
-    this.el.style.display = "none";
+    applyStyles(this.el, {
+      ...panelStyles({ maxWidth: "320px", padding: "18px 18px 16px" }),
+      position: "absolute",
+      left: "20px",
+      bottom: "20px",
+      zIndex: "1000",
+      display: "none",
+    });
 
     this.title = document.createElement("div");
-    this.title.style.fontSize = "16px";
-    this.title.style.fontWeight = "600";
+    applyStyles(this.title, {
+      ...titleStyles(),
+      fontSize: "18px",
+      marginBottom: "8px",
+    });
     this.el.appendChild(this.title);
 
     this.desc = document.createElement("div");
-    this.desc.style.marginTop = "6px";
-    this.desc.style.fontSize = "13px";
+    applyStyles(this.desc, {
+      ...subtitleStyles(),
+      fontSize: "13px",
+      lineHeight: "1.55",
+    });
     this.el.appendChild(this.desc);
 
     const btns = document.createElement("div");
-    btns.style.marginTop = "10px";
-    btns.style.display = "flex";
-    btns.style.gap = "8px";
+    applyStyles(btns, {
+      marginTop: "14px",
+      display: "flex",
+      gap: "8px",
+      flexWrap: "wrap",
+    });
 
     this.backBtn = document.createElement("button");
-    this.backBtn.innerText = "↩ Назад";
+    this.backBtn.innerText = "Назад";
+    applyStyles(this.backBtn, buttonStyles("primary"));
     this.backBtn.onclick = () => this.onBack();
     btns.appendChild(this.backBtn);
 
     if (this.onEdit) {
       this.editBtn = document.createElement("button");
-      this.editBtn.innerText = "✎ Ред.";
+      this.editBtn.innerText = "Редактировать";
+      applyStyles(this.editBtn, buttonStyles("secondary"));
       this.editBtn.onclick = () => this.onEdit();
       btns.appendChild(this.editBtn);
     }
@@ -59,6 +75,7 @@ export class Inspector {
       this.hide();
       return;
     }
+
     this.title.innerText = meta.name || meta.meshName || "Без имени";
     this.desc.innerText = meta.description || "";
     this.desc.style.display = meta.description ? "block" : "none";

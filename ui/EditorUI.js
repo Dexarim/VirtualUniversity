@@ -1,49 +1,81 @@
+import {
+  applyStyles,
+  buttonStyles,
+  ensureDesignSystem,
+  inputStyles,
+  panelStyles,
+  subtitleStyles,
+  titleStyles,
+} from "./designSystem.js";
+
 export class EditorUI {
   constructor({ container = document.body, dataManager }) {
+    ensureDesignSystem();
+
     this.dataManager = dataManager;
     this.el = document.createElement("div");
-    this.el.style.position = "absolute";
-    this.el.style.right = "20px";
-    this.el.style.bottom = "20px";
-    this.el.style.minWidth = "260px";
-    this.el.style.background = "rgba(255,255,255,0.95)";
-    this.el.style.color = "#111";
-    this.el.style.padding = "12px";
-    this.el.style.borderRadius = "8px";
-    this.el.style.fontFamily = "sans-serif";
-    this.el.style.zIndex = 1000;
-    this.el.style.display = "none";
+    applyStyles(this.el, {
+      ...panelStyles({ width: "320px", padding: "18px" }),
+      position: "absolute",
+      right: "20px",
+      bottom: "20px",
+      zIndex: "1000",
+      display: "none",
+    });
 
     this.title = document.createElement("div");
     this.title.innerText = "Редактор метаданных";
-    this.title.style.fontWeight = "700";
+    applyStyles(this.title, {
+      ...titleStyles(),
+      fontSize: "18px",
+      marginBottom: "6px",
+    });
     this.el.appendChild(this.title);
+
+    this.subtitle = document.createElement("div");
+    this.subtitle.innerText = "Меняйте подписи и описания прямо в текущей сцене.";
+    applyStyles(this.subtitle, {
+      ...subtitleStyles(),
+      marginBottom: "12px",
+    });
+    this.el.appendChild(this.subtitle);
 
     this.metaName = document.createElement("input");
     this.metaName.placeholder = "Имя";
-    this.metaName.style.width = "100%";
-    this.metaName.style.marginTop = "8px";
+    applyStyles(this.metaName, {
+      ...inputStyles(),
+      marginTop: "0",
+      marginBottom: "8px",
+    });
     this.el.appendChild(this.metaName);
 
     this.metaDesc = document.createElement("textarea");
     this.metaDesc.placeholder = "Описание (опционально)";
-    this.metaDesc.style.width = "100%";
-    this.metaDesc.style.marginTop = "6px";
-    this.metaDesc.style.height = "80px";
+    applyStyles(this.metaDesc, {
+      ...inputStyles(),
+      minHeight: "96px",
+      resize: "vertical",
+      marginBottom: "10px",
+    });
     this.el.appendChild(this.metaDesc);
 
     const actions = document.createElement("div");
-    actions.style.marginTop = "8px";
-    actions.style.display = "flex";
-    actions.style.gap = "8px";
+    applyStyles(actions, {
+      marginTop: "4px",
+      display: "flex",
+      gap: "8px",
+      flexWrap: "wrap",
+    });
 
     this.saveBtn = document.createElement("button");
-    this.saveBtn.innerText = "Сохранить (в памяти)";
+    this.saveBtn.innerText = "Сохранить";
+    applyStyles(this.saveBtn, buttonStyles("primary"));
     this.saveBtn.onclick = () => this.save();
     actions.appendChild(this.saveBtn);
 
     this.exportBtn = document.createElement("button");
     this.exportBtn.innerText = "Экспорт JSON";
+    applyStyles(this.exportBtn, buttonStyles("secondary"));
     this.exportBtn.onclick = () => this.dataManager.exportJSON();
     actions.appendChild(this.exportBtn);
 
@@ -67,14 +99,16 @@ export class EditorUI {
 
   save() {
     if (!this.currentMeshName) return;
+
     const meta = {
       name: this.metaName.value.trim(),
       description: this.metaDesc.value.trim() || undefined,
       meshName: this.currentMeshName,
     };
+
     this.dataManager.setMeta(this.currentMeshName, meta);
     alert(
-      "Сохранено в память (для постоянного сохранения — экспортируйте JSON)."
+      "Изменения сохранены в памяти. Для постоянного сохранения экспортируйте JSON."
     );
   }
 }
