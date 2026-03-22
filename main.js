@@ -43,6 +43,7 @@ let highlightedRoomsStates = new Map(); // { meshName: { originalMaterial, highl
 
 // Map<buildingKey, { cfg, group, floorsMeshes, roomsMeshes, hitboxManager }>
 const buildingStates = new Map();
+const sceneObjectStates = new Map();
 let navStack = [];
 
 // Панорамный оверлей
@@ -142,6 +143,21 @@ function updateLocalizedSceneMetadata() {
           roomCfg.description || ""
         );
       });
+    });
+  }
+
+  for (const [, st] of sceneObjectStates.entries()) {
+    const cfg = st.cfg;
+    if (!cfg) continue;
+
+    (st.objects || []).forEach((object) => {
+      if (!object) return;
+      object.userData = object.userData || {};
+      object.userData.name = getLocalizedName(cfg, cfg.name || object.name || "");
+      object.userData.description = getLocalizedDescription(
+        cfg,
+        cfg.description || ""
+      );
     });
   }
 }
@@ -419,10 +435,46 @@ function attachObjectToGroup(group, object) {
   return object;
 }
 
+function getSceneObjectMeshNames(cfg) {
+  const names = new Set();
+
+  if (cfg?.meshName) {
+    names.add(cfg.meshName);
+  }
+
+  (cfg?.displayMeshes || []).forEach((meshName) => {
+    if (meshName) names.add(meshName);
+  });
+
+  return Array.from(names);
+}
+
+function isSceneObjectVisibleInMode(cfg, mode = "overview") {
+  const visibleIn =
+    Array.isArray(cfg?.visibleIn) && cfg.visibleIn.length
+      ? cfg.visibleIn
+      : ["overview"];
+  return visibleIn.includes(mode);
+}
+
+function setSceneObjectsVisibility(mode = "overview") {
+  for (const [, st] of sceneObjectStates.entries()) {
+    const shouldShow = isSceneObjectVisibleInMode(st.cfg, mode);
+    (st.objects || []).forEach((object) => {
+      if (object) object.visible = shouldShow;
+    });
+  }
+}
+
+function getSupportiveMeshNames(cfg) {
+  const names = cfg?.supportiveMeshes || cfg?.alwaysVisibleMeshes || [];
+  return Array.isArray(names) ? names : [];
+}
+
 function collectConfiguredVisualMeshNames(cfg) {
   const names = new Set();
 
-  (cfg?.alwaysVisibleMeshes || []).forEach((meshName) => {
+  getSupportiveMeshNames(cfg).forEach((meshName) => {
     if (meshName) names.add(meshName);
   });
 
@@ -494,10 +546,14 @@ function buildChildVisibilityMeta(group, cfg, floorsMeshes, floorRoomsMap) {
     priorityByUuid.set(child.uuid, priority);
   };
 
-  (cfg?.alwaysVisibleMeshes || []).forEach((meshName) => {
+  getSupportiveMeshNames(cfg).forEach((meshName) => {
     const object = group.getObjectByName(meshName);
     const child = getTopLevelGroupChild(group, object);
-    assignMeta(child, { role: "global", floorMeshName: null, persistent: true }, 10);
+    assignMeta(
+      child,
+      { role: "supportive", floorMeshName: null, persistent: false },
+      10
+    );
   });
 
   (cfg?.floors || []).forEach((floorCfg) => {
@@ -602,17 +658,17 @@ function setBuildingVisualState(st, mode = "overview", floorMeshName = null) {
     }
 
     if (mode === "building") {
-      if (meta.role === "room") {
+      if (meta.role === "room" || meta.role === "supportive") {
         child.visible = false;
         return;
       }
 
-      child.visible = !meta.persistent;
+      child.visible = true;
       return;
     }
 
     if (mode === "floor") {
-      if (meta.role === "room") {
+      if (meta.role === "room" || meta.role === "supportive") {
         child.visible = false;
         return;
       }
@@ -622,7 +678,7 @@ function setBuildingVisualState(st, mode = "overview", floorMeshName = null) {
         return;
       }
 
-      child.visible = !meta.persistent;
+      child.visible = true;
     }
   });
 }
@@ -822,6 +878,7 @@ function handleClickableClick(buildingKey, state, clickableParent) {
 function showAllBuildingsOverview() {
   resetHoverState();
   clearRoomHighlights();
+  setSceneObjectsVisibility("overview");
 
   for (const [k, st] of buildingStates.entries()) {
     st.group.visible = true;
@@ -865,6 +922,11 @@ function showAllBuildingsOverview() {
 
   const box = new THREE.Box3();
   for (const st of buildingStates.values()) box.expandByObject(st.group);
+  for (const st of sceneObjectStates.values()) {
+    (st.objects || []).forEach((object) => {
+      if (object?.visible) box.expandByObject(object);
+    });
+  }
   safeSetCameraToBox(box, CAMERA_SETTINGS.overviewFactor);
 
   syncRoomHighlightsWithCurrentState();
@@ -876,6 +938,7 @@ function showFloorsForBuilding(buildingKey) {
   if (!st) return;
   resetHoverState();
   clearRoomHighlights();
+  setSceneObjectsVisibility("building");
 
   for (const [k, other] of buildingStates.entries()) {
     if (k === buildingKey) {
@@ -913,6 +976,7 @@ function showSingleFloorForBuilding(buildingKey, floorMeshName) {
   if (!st) return;
   resetHoverState();
   clearRoomHighlights();
+  setSceneObjectsVisibility("floor");
 
   const floorMesh = st.group.getObjectByName(floorMeshName);
   if (!floorMesh) {
@@ -1005,6 +1069,7 @@ function goToRoom(roomData) {
   if (!st) return;
   resetHoverState();
   clearRoomHighlights();
+  setSceneObjectsVisibility("floor");
 
   // Показываем здание
   for (const [k, other] of buildingStates.entries()) {
@@ -1802,6 +1867,37 @@ async function initApp() {
       "rooms:",
       roomsMeshes.length
     );
+  }
+
+  const sceneObjects = dataManager.getSceneObjects?.() || [];
+  for (const item of sceneObjects) {
+    const key = item.key;
+    const cfg = item.cfg;
+    const objects = [];
+
+    getSceneObjectMeshNames(cfg).forEach((meshName) => {
+      let object = modelScene.getObjectByName(meshName);
+      if (!object) {
+        object = scene.getObjectByName(meshName);
+      }
+
+      if (!object) {
+        console.warn("[WARN] Scene object mesh not found in GLB:", meshName, "for", key);
+        return;
+      }
+
+      attachObjectToGroup(scene, object);
+      object.visible = false;
+      object.userData = object.userData || {};
+      object.userData.name = getLocalizedName(cfg, cfg.name || object.name || key);
+      object.userData.description = getLocalizedDescription(
+        cfg,
+        cfg.description || ""
+      );
+      objects.push(object);
+    });
+
+    sceneObjectStates.set(key, { key, cfg, objects });
   }
 
   updateLocalizedSceneMetadata();
