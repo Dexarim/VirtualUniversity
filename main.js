@@ -43,6 +43,21 @@ const CAMERA_SETTINGS = {
   floorFactor: 0.5,
 };
 
+const MILKY_MODEL_COLOR = new THREE.Color(0xf4efe6);
+const HOVER_TINT_COLOR = new THREE.Color(0xb7b7b7);
+const HOVER_PULSE_LERP = 0.18;
+const BREATHING_DURATION_MS = 5000;
+const BREATHING_SPEED = 0.005;
+const ROOM_HIGHLIGHT_BASE_OPACITY = 0.82;
+const ROOM_HIGHLIGHT_BREATH_MIN_OPACITY = 0.28;
+const ROOM_HIGHLIGHT_BREATH_MAX_OPACITY = 0.98;
+const ROOM_HIGHLIGHT_BASE_EMISSIVE = 0.22;
+const ROOM_HIGHLIGHT_BREATH_MIN_EMISSIVE = 0.08;
+const ROOM_HIGHLIGHT_BREATH_MAX_EMISSIVE = 0.72;
+
+const hoverPulseStates = new Map();
+const breathingRoomStates = new Map();
+
 // ---------------- NAV helpers ----------------
 function pushNav(state, meta = {}) {
   const last = navStack[navStack.length - 1];
@@ -57,6 +72,74 @@ function pushNav(state, meta = {}) {
 function popNav() {
   navStack.pop();
   return navStack[navStack.length - 1];
+}
+
+function getCurrentNavState() {
+  return navStack[navStack.length - 1]?.state || null;
+}
+
+function getCurrentNavEntry() {
+  return navStack[navStack.length - 1] || null;
+}
+
+function setHoverPulseState(clickable, active) {
+  if (!clickable || !["building", "floor"].includes(clickable.kind)) return;
+
+  const targetObject = clickable.parentObject;
+  if (!targetObject) return;
+
+  const key = targetObject.uuid;
+  let state = hoverPulseStates.get(key);
+  if (!state) {
+    state = {
+      object: targetObject,
+      kind: clickable.kind,
+      tintTargets:
+        clickable.kind === "building"
+          ? collectHoverTintTargets(targetObject, Number.POSITIVE_INFINITY)
+          : clickable.kind === "floor"
+            ? collectHoverTintTargets(targetObject, 2)
+            : [],
+      hoverMaterials: null,
+      baseScale: targetObject.scale.clone(),
+      weight: 0,
+      active: false,
+    };
+    hoverPulseStates.set(key, state);
+  }
+
+  state.active = !!active;
+}
+
+function setRoomHoverBreathingState(clickable, active) {
+  if (!clickable || clickable.kind !== "room") return;
+
+  const targetRoom = clickable.parentObject;
+  if (!targetRoom) return;
+
+  const meshName = targetRoom.name || targetRoom.uuid;
+  let state = breathingRoomStates.get(meshName);
+  if (!state) {
+    state = {
+      meshName,
+      hoverActive: false,
+      searchStartTime: null,
+    };
+    breathingRoomStates.set(meshName, state);
+  }
+
+  state.hoverActive = !!active;
+  if (!state.hoverActive && state.searchStartTime == null) {
+    breathingRoomStates.delete(meshName);
+  }
+}
+
+function resetHoverState() {
+  setHoverPulseState(lastHoveredObject, false);
+  setRoomHoverBreathingState(lastHoveredObject, false);
+  lastHoveredObject?.setHover?.(false);
+  lastHoveredObject = null;
+  tooltip?.hide();
 }
 
 function goBack() {
@@ -169,6 +252,10 @@ function initThree() {
 
     // Обновляем тултип при изменении наведённого объекта
     if (hoveredObject !== lastHoveredObject) {
+      setHoverPulseState(lastHoveredObject, false);
+      setRoomHoverBreathingState(lastHoveredObject, false);
+      setHoverPulseState(hoveredObject, true);
+      setRoomHoverBreathingState(hoveredObject, true);
       lastHoveredObject = hoveredObject;
 
       if (hoveredObject && hoveredObject.parentObject) {
@@ -191,6 +278,9 @@ function initThree() {
   });
 
   renderer.domElement.addEventListener("pointerleave", () => {
+    setHoverPulseState(lastHoveredObject, false);
+    setRoomHoverBreathingState(lastHoveredObject, false);
+    lastHoveredObject?.setHover?.(false);
     tooltip?.hide();
     lastHoveredObject = null;
   });
@@ -288,6 +378,9 @@ function handleClickableClick(buildingKey, state, clickableParent) {
 
 // ---------------- view functions ----------------
 function showAllBuildingsOverview() {
+  resetHoverState();
+  clearRoomHighlights();
+
   for (const [k, st] of buildingStates.entries()) {
     st.group.visible = true;
     st.group.traverse((o) => (o.visible = true));
@@ -331,11 +424,15 @@ function showAllBuildingsOverview() {
   const box = new THREE.Box3();
   for (const st of buildingStates.values()) box.expandByObject(st.group);
   safeSetCameraToBox(box, CAMERA_SETTINGS.overviewFactor);
+
+  syncRoomHighlightsWithCurrentState();
 }
 
 function showFloorsForBuilding(buildingKey) {
   const st = buildingStates.get(buildingKey);
   if (!st) return;
+  resetHoverState();
+  clearRoomHighlights();
 
   for (const [k, other] of buildingStates.entries()) {
     if (k === buildingKey) {
@@ -363,12 +460,15 @@ function showFloorsForBuilding(buildingKey) {
     new THREE.Box3().setFromObject(st.group),
     CAMERA_SETTINGS.buildingFactor
   );
+  syncRoomHighlightsWithCurrentState();
 }
 
 // Показать этаж и подготовить комнаты
 function showSingleFloorForBuilding(buildingKey, floorMeshName) {
   const st = buildingStates.get(buildingKey);
   if (!st) return;
+  resetHoverState();
+  clearRoomHighlights();
 
   const floorMesh = st.group.getObjectByName(floorMeshName);
   if (!floorMesh) {
@@ -443,6 +543,7 @@ function showSingleFloorForBuilding(buildingKey, floorMeshName) {
     new THREE.Box3().setFromObject(floorMesh),
     CAMERA_SETTINGS.floorFactor
   );
+  syncRoomHighlightsWithCurrentState();
 }
 
 // =============== RoomFilter Functions ===============
@@ -453,6 +554,8 @@ function goToRoom(roomData) {
 
   const st = buildingStates.get(roomData.buildingKey);
   if (!st) return;
+  resetHoverState();
+  clearRoomHighlights();
 
   // Показываем здание
   for (const [k, other] of buildingStates.entries()) {
@@ -477,10 +580,6 @@ function goToRoom(roomData) {
     if (m) m.visible = false;
   });
 
-  if (roomData.mesh) {
-    roomData.mesh.visible = true;
-  }
-
   // Устанавливаем уровень хитбоксов
   try {
     st.hitboxManager?.setLevel("rooms", [roomData.mesh]);
@@ -500,16 +599,16 @@ function goToRoom(roomData) {
     buildingKey: roomData.buildingKey,
     roomMeshName: roomData.meshName,
   });
+
+  syncRoomHighlightsWithCurrentState(roomData.meshName);
+
+  if (roomData.mesh) {
+    startRoomBreathing(roomData.mesh);
+  }
 }
 
-function applyRoomFilter(config) {
-  const { filters, search } = config;
-
-  // Очищаем предыдущую подсветку
-  clearRoomHighlights();
-
-  // Собираем все кабинеты с их типами и корпусами
-  const allRooms = []; // { name, buildingKey, buildingName, floorName, mesh, type }
+function collectAllRooms() {
+  const allRooms = [];
   for (const [buildingKey, st] of buildingStates.entries()) {
     const cfg = st.cfg;
     const buildingName = cfg.name || buildingKey;
@@ -523,6 +622,7 @@ function applyRoomFilter(config) {
             buildingKey,
             buildingName,
             floorName: floorCfg.name || floorCfg.meshName,
+            floorMeshName: floorCfg.meshName,
             meshName: roomCfg.meshName,
             mesh: roomMesh,
             type: roomCfg.type || "other",
@@ -533,30 +633,94 @@ function applyRoomFilter(config) {
     });
   }
 
-  // Фильтруем по типам и поиску
-  let filtered = allRooms;
+  return allRooms;
+}
 
-  // Фильтр по типам
-  if (filters.length > 0) {
-    filtered = filtered.filter((r) => filters.includes(r.type));
+function getRoomsForCurrentState() {
+  const entry = getCurrentNavEntry();
+  const allRooms = collectAllRooms();
+  if (!entry) return [];
+
+  switch (entry.state) {
+    case "buildings_overview":
+      return allRooms;
+    case "building_floor":
+      return allRooms.filter(
+        (room) =>
+          room.buildingKey === entry.meta.buildingKey &&
+          room.floorMeshName === entry.meta.floorMeshName
+      );
+    case "building_room":
+      return allRooms.filter(
+        (room) =>
+          room.buildingKey === entry.meta.buildingKey &&
+          room.meshName === entry.meta.roomMeshName
+      );
+    default:
+      return [];
+  }
+}
+
+function syncRoomHighlightsWithCurrentState(forceRoomMeshName = null) {
+  const filters = roomFilter?.getActiveFilters?.().filters || [];
+  const navEntry = getCurrentNavEntry();
+  const allRooms = collectAllRooms();
+  const scopedRooms = getRoomsForCurrentState();
+  const visibleScopedNames = new Set(scopedRooms.map((room) => room.meshName));
+  const activeRoomMeshes = [];
+
+  clearRoomHighlights();
+
+  allRooms.forEach((room) => {
+    if (room.mesh) room.mesh.visible = false;
+  });
+
+  if (getCurrentNavState() === "building_floors") {
+    return;
   }
 
-  // Фильтр по поиску (имя/номер кабинета)
-  if (search) {
-    const q = search.toLowerCase();
-    filtered = filtered.filter(
-      (r) =>
-        r.name.toLowerCase().includes(q) || r.meshName.toLowerCase().includes(q)
-    );
+  scopedRooms.forEach((room) => {
+    const shouldForceShow = forceRoomMeshName && room.meshName === forceRoomMeshName;
+    const isFilterEnabled = filters.includes(room.type);
+    const shouldShow = shouldForceShow || isFilterEnabled;
+
+    if (!room.mesh || !visibleScopedNames.has(room.meshName) || !shouldShow) {
+      return;
+    }
+
+    room.mesh.visible = true;
+    highlightRoom(room.mesh, room.type);
+    activeRoomMeshes.push(room.mesh);
+  });
+
+  if (navEntry?.state === "building_floor" || navEntry?.state === "building_room") {
+    const currentBuilding = buildingStates.get(navEntry.meta.buildingKey);
+    currentBuilding?.hitboxManager?.setLevel?.("rooms", activeRoomMeshes);
+  }
+}
+
+function applyRoomFilter(config = {}) {
+  const search = (config?.search || "").trim().toLowerCase();
+  syncRoomHighlightsWithCurrentState();
+
+  const allRooms = collectAllRooms();
+
+  if (!search) {
+    roomFilter?.resetSearchResults();
+    return;
   }
 
-  // Если фильтров нет, ничего не подсвечиваем
+  const filtered = allRooms.filter(
+    (r) =>
+      r.name.toLowerCase().includes(search) ||
+      r.meshName.toLowerCase().includes(search)
+  );
+
   if (filtered.length === 0) {
     if (roomFilter) roomFilter.updateSearchResults([]);
     return;
   }
 
-  // Обновляем результаты поиска в UI
   if (roomFilter) {
     roomFilter.updateSearchResults(
       filtered.map((r) => ({
@@ -571,11 +735,6 @@ function applyRoomFilter(config) {
       }))
     );
   }
-
-  // Подсвечиваем найденные кабинеты
-  filtered.forEach((r) => {
-    highlightRoom(r.mesh, r.type);
-  });
 }
 
 function highlightRoom(mesh, type) {
@@ -584,64 +743,334 @@ function highlightRoom(mesh, type) {
   const color = roomFilter.getColorForType(type);
   const meshName = mesh.name || mesh.uuid;
 
-  // Сохраняем оригинальный материал
   if (!highlightedRoomsStates.has(meshName)) {
     highlightedRoomsStates.set(meshName, {
-      originalMaterial: mesh.material ? mesh.material.clone() : null,
+      originalMaterial: mesh.material || null,
+      highlightedMaterial: null,
       highlighted: false,
     });
   }
 
-  // Создаём новый материал для подсветки
-  const hMaterial = new THREE.MeshPhongMaterial({
-    color: color,
-    emissive: color,
-    emissiveIntensity: 0.5,
-    transparent: true,
-    opacity: 0.7,
-    side: THREE.DoubleSide,
-  });
+  const state = highlightedRoomsStates.get(meshName);
+  if (!state) return;
 
-  mesh.material = hMaterial;
+  disposeMaterialSet(state.highlightedMaterial);
+
+  const highlightedMaterial = createHighlightedMaterial(
+    state.originalMaterial || mesh.material,
+    color
+  );
+
+  mesh.material = highlightedMaterial;
   highlightedRoomsMeshes.set(meshName, mesh);
 
-  const state = highlightedRoomsStates.get(meshName);
-  if (state) state.highlighted = true;
+  state.highlightedMaterial = highlightedMaterial;
+  state.highlighted = true;
 }
 
 function clearRoomHighlights() {
+  breathingRoomStates.clear();
+
   for (const [meshName, mesh] of highlightedRoomsMeshes.entries()) {
     const state = highlightedRoomsStates.get(meshName);
     if (state && state.originalMaterial) {
       mesh.material = state.originalMaterial;
     }
-    state.highlighted = false;
+    if (state) {
+      disposeMaterialSet(state.highlightedMaterial);
+      state.highlightedMaterial = null;
+      state.highlighted = false;
+    }
   }
   highlightedRoomsMeshes.clear();
 }
 
-// Подсветить все кабинеты при старте (делает меши видимыми и применяет цвет подсветки)
-function highlightAllRoomsAtStart() {
-  for (const [buildingKey, st] of buildingStates.entries()) {
-    const cfg = st.cfg || {};
-    (cfg.floors || []).forEach((floorCfg) => {
-      (floorCfg.rooms || []).forEach((roomCfg) => {
-        try {
-          const mesh = st.group.getObjectByName(roomCfg.meshName);
-          if (mesh) {
-            mesh.visible = true;
-            highlightRoom(mesh, roomCfg.type || "other");
-          }
-        } catch (e) {
-          console.warn(
-            "highlightAllRoomsAtStart error for",
-            roomCfg.meshName,
-            e
-          );
-        }
+function createHighlightedMaterial(material, color) {
+  const tintMaterial = (sourceMaterial) => {
+    if (!sourceMaterial) {
+      return new THREE.MeshPhongMaterial({
+        color,
+        emissive: color,
+        emissiveIntensity: ROOM_HIGHLIGHT_BASE_EMISSIVE,
+        transparent: true,
+        opacity: ROOM_HIGHLIGHT_BASE_OPACITY,
+        side: THREE.DoubleSide,
       });
-    });
+    }
+
+    const nextMaterial = sourceMaterial.clone
+      ? sourceMaterial.clone()
+      : new THREE.MeshPhongMaterial();
+
+    if (nextMaterial.color?.set) {
+      nextMaterial.color.set(color);
+    }
+
+    if (nextMaterial.emissive?.set) {
+      nextMaterial.emissive.set(color);
+      nextMaterial.emissiveIntensity = Math.max(
+        nextMaterial.emissiveIntensity || 0,
+        ROOM_HIGHLIGHT_BASE_EMISSIVE
+      );
+    }
+
+    nextMaterial.transparent = true;
+    nextMaterial.opacity = Math.min(
+      nextMaterial.opacity ?? 1,
+      ROOM_HIGHLIGHT_BASE_OPACITY
+    );
+    nextMaterial.side = THREE.DoubleSide;
+    nextMaterial.needsUpdate = true;
+    return nextMaterial;
+  };
+
+  return Array.isArray(material)
+    ? material.map((item) => tintMaterial(item))
+    : tintMaterial(material);
+}
+
+function disposeMaterialSet(material) {
+  if (!material) return;
+
+  if (Array.isArray(material)) {
+    material.forEach((item) => item?.dispose?.());
+    return;
   }
+
+  material.dispose?.();
+}
+
+function updateHighlightedMaterialAppearance(material, opacity, emissiveIntensity) {
+  const updateOne = (mat) => {
+    if (!mat) return;
+    mat.transparent = true;
+    mat.opacity = opacity;
+    if (mat.emissiveIntensity !== undefined) {
+      mat.emissiveIntensity = emissiveIntensity;
+    }
+    mat.needsUpdate = true;
+  };
+
+  if (Array.isArray(material)) {
+    material.forEach((mat) => updateOne(mat));
+    return;
+  }
+
+  updateOne(material);
+}
+
+function collectHoverTintTargets(object, maxDepth = 2) {
+  const targets = [];
+
+  const visit = (node, depth) => {
+    if (!node) return;
+
+    if (node.isMesh) {
+      targets.push(node);
+      return;
+    }
+
+    if (depth >= maxDepth) {
+      return;
+    }
+
+    node.children?.forEach((child) => visit(child, depth + 1));
+  };
+
+  visit(object, 0);
+  return targets;
+}
+
+function cloneMaterialSet(material) {
+  if (!material) return material;
+  if (Array.isArray(material)) {
+    return material.map((item) => item?.clone?.() || item);
+  }
+  return material.clone?.() || material;
+}
+
+function disposeMaterialCloneSet(material) {
+  if (!material) return;
+  if (Array.isArray(material)) {
+    material.forEach((item) => item?.dispose?.());
+    return;
+  }
+  material.dispose?.();
+}
+
+function ensureHoverMaterials(state) {
+  if (!state?.tintTargets?.length || state.hoverMaterials) return;
+
+  state.hoverMaterials = state.tintTargets.map((mesh) => {
+    const originalMaterial = mesh.material;
+    const hoverMaterial = cloneMaterialSet(originalMaterial);
+    mesh.material = hoverMaterial;
+    return { mesh, originalMaterial, hoverMaterial };
+  });
+}
+
+function releaseHoverMaterials(state) {
+  if (!state?.hoverMaterials) return;
+
+  state.hoverMaterials.forEach(({ mesh, originalMaterial, hoverMaterial }) => {
+    mesh.material = originalMaterial;
+    disposeMaterialCloneSet(hoverMaterial);
+  });
+
+  state.hoverMaterials = null;
+}
+
+function setMeshCollectionTintBlend(targets, fromColor, toColor, blend, state = null) {
+  if (!targets?.length) return;
+
+  if (state?.kind === "building" || state?.kind === "floor") {
+    ensureHoverMaterials(state);
+  }
+
+  const applyTint = (mesh) => {
+    const setMaterialColor = (material) => {
+      if (!material?.color?.lerpColors) return;
+      material.color.lerpColors(fromColor, toColor, blend);
+      material.needsUpdate = true;
+    };
+
+    if (Array.isArray(mesh.material)) {
+      mesh.material.forEach((material) => setMaterialColor(material));
+      return;
+    }
+
+    setMaterialColor(mesh.material);
+  };
+
+  targets.forEach((mesh) => applyTint(mesh));
+}
+
+function startRoomBreathing(mesh) {
+  if (!mesh) return;
+
+  const meshName = mesh.name || mesh.uuid;
+  const existing = breathingRoomStates.get(meshName);
+  breathingRoomStates.set(meshName, {
+    meshName,
+    hoverActive: existing?.hoverActive || false,
+    searchStartTime: performance.now(),
+  });
+}
+
+function animateBreathingRooms(time) {
+  for (const [meshName, state] of breathingRoomStates.entries()) {
+    const roomState = highlightedRoomsStates.get(meshName);
+    if (!roomState?.highlightedMaterial) {
+      breathingRoomStates.delete(meshName);
+      continue;
+    }
+
+    const hasSearchAnimation = typeof state.searchStartTime === "number";
+    const elapsed = hasSearchAnimation ? time - state.searchStartTime : 0;
+    const searchExpired = hasSearchAnimation && elapsed >= BREATHING_DURATION_MS;
+
+    if (!state.hoverActive && searchExpired) {
+      updateHighlightedMaterialAppearance(
+        roomState.highlightedMaterial,
+        ROOM_HIGHLIGHT_BASE_OPACITY,
+        ROOM_HIGHLIGHT_BASE_EMISSIVE
+      );
+      breathingRoomStates.delete(meshName);
+      continue;
+    }
+
+    if (searchExpired) {
+      state.searchStartTime = null;
+    }
+
+    const pulse = (Math.sin(time * BREATHING_SPEED) + 1) * 0.5;
+    const opacity = THREE.MathUtils.lerp(
+      ROOM_HIGHLIGHT_BREATH_MIN_OPACITY,
+      ROOM_HIGHLIGHT_BREATH_MAX_OPACITY,
+      pulse
+    );
+    const emissiveIntensity = THREE.MathUtils.lerp(
+      ROOM_HIGHLIGHT_BREATH_MIN_EMISSIVE,
+      ROOM_HIGHLIGHT_BREATH_MAX_EMISSIVE,
+      pulse
+    );
+
+    updateHighlightedMaterialAppearance(
+      roomState.highlightedMaterial,
+      opacity,
+      emissiveIntensity
+    );
+  }
+}
+
+function animateHoverPulses(time) {
+  void time;
+
+  for (const [key, state] of hoverPulseStates.entries()) {
+    if (!state.object) {
+      hoverPulseStates.delete(key);
+      continue;
+    }
+
+    state.weight = THREE.MathUtils.lerp(
+      state.weight,
+      state.active ? 1 : 0,
+      HOVER_PULSE_LERP
+    );
+
+    if (!state.active && state.weight < 0.001) {
+      state.object.scale.copy(state.baseScale);
+      if (state.kind === "building" || state.kind === "floor") {
+        releaseHoverMaterials(state);
+      }
+      hoverPulseStates.delete(key);
+      continue;
+    }
+
+    state.object.scale.copy(state.baseScale);
+
+    if (state.kind === "building" || state.kind === "floor") {
+      setMeshCollectionTintBlend(
+        state.tintTargets,
+        MILKY_MODEL_COLOR,
+        HOVER_TINT_COLOR,
+        Math.min(1, state.weight * 0.95),
+        state
+      );
+    }
+  }
+}
+
+function tintMaterialToMilky(material) {
+  const tintOne = (mat) => {
+    if (!mat) return;
+
+    if (mat.color?.set) {
+      mat.color.set(MILKY_MODEL_COLOR);
+    }
+
+    if (mat.emissive?.set) {
+      mat.emissive.set(0x241f1a);
+      mat.emissiveIntensity = Math.min(mat.emissiveIntensity || 0, 0.04);
+    }
+
+    if ("roughness" in mat && typeof mat.roughness === "number") {
+      mat.roughness = Math.max(mat.roughness, 0.88);
+    }
+
+    if ("metalness" in mat && typeof mat.metalness === "number") {
+      mat.metalness = Math.min(mat.metalness, 0.12);
+    }
+
+    mat.needsUpdate = true;
+  };
+
+  if (Array.isArray(material)) {
+    material.forEach((mat) => tintOne(mat));
+    return;
+  }
+
+  tintOne(material);
 }
 
 // =============== End RoomFilter Functions ===============
@@ -839,8 +1268,8 @@ async function initApp() {
   const info = new InfoPanel({ container: document.body, onBack: goBack });
   window._infoPanel = info;
 
-  // Создаём кнопку открытия фильтра кабинетов
-  createFilterButton();
+  // Создаём кнопку открытия поиска кабинетов
+  createSearchButton();
 
   // удобные глобальные ссылки для отладки
   window._scene = scene;
@@ -850,13 +1279,6 @@ async function initApp() {
   window.enableGlobalDebug && window.enableGlobalDebug(false);
   window._roomFilter = roomFilter;
 
-  // стартовое представление
-  // подсветить все кабинеты по умолчанию, затем показать обзор зданий
-  try {
-    highlightAllRoomsAtStart();
-  } catch (e) {
-    console.warn("highlightAllRoomsAtStart failed:", e);
-  }
   showAllBuildingsOverview();
 
   // render tweaks (опционально, для корректности отображения)
@@ -866,6 +1288,7 @@ async function initApp() {
       if (!obj.userData._originalMaterial)
         obj.userData._originalMaterial = obj.material;
       if (obj.material) {
+        tintMaterialToMilky(obj.material);
         obj.material.side = THREE.DoubleSide;
         obj.material.transparent = false;
         obj.material.polygonOffset = true;
@@ -890,12 +1313,15 @@ async function initApp() {
 // ---------------- render loop ----------------
 function animate() {
   requestAnimationFrame(animate);
+  const time = performance.now();
   controls.update();
   for (const st of buildingStates.values()) {
     try {
       st.hitboxManager?.update();
     } catch (e) {}
   }
+  animateHoverPulses(time);
+  animateBreathingRooms(time);
   renderer.render(scene, camera);
 }
 
@@ -923,11 +1349,11 @@ window.enableGlobalDebug = function (v) {
   console.log("Debug:", !!v);
 };
 
-// =============== Filter Button Helper ===============
-function createFilterButton() {
+// =============== Search Button Helper ===============
+function createSearchButton() {
   const btn = document.createElement("button");
-  btn.id = "room-filter-btn";
-  btn.textContent = "Фильтр";
+  btn.id = "room-search-btn";
+  btn.textContent = "Поиск";
   btn.style.cssText = `
     position: fixed;
     top: 80px;
@@ -943,7 +1369,7 @@ function createFilterButton() {
     z-index: 9998;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   `;
-  btn.onmouseover = () => (btn.style.background = "rgba(115, 167, 250, 1);");
+  btn.onmouseover = () => (btn.style.background = "rgb(115, 167, 250)");
   btn.onmouseout = () => (btn.style.background = "rgb(58, 134, 255)");
   btn.onclick = () => {
     if (roomFilter) roomFilter.show();
