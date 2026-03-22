@@ -1,0 +1,657 @@
+// main.js
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+
+import { ModelLoader } from "./core/ModelLoader.js";
+import { HitboxManager } from "./core/HitboxManager.js";
+import { DebugManager } from "./core/DebugManager.js";
+import { DataManager } from "./core/DataManager.js";
+
+import { InfoPanel } from "./ui/InfoPanel.js";
+import { Inspector } from "./ui/Inspector.js";
+import { EditorUI } from "./ui/EditorUI.js";
+
+/*
+  main.js с автодетектом этажей из GLB если cfg.floors пустой.
+  Логика:
+  - читаем JSON (DataManager)
+  - загружаем /models/all.glb
+  - если cfg.floors пуст — пытаемся автозаполнить:
+      * если конфигов зданий 1 => берём все меши с "floor" в имени
+      * если конфигов >1 => пытаемся сопоставить по вхождению имени/ключа (эвристика)
+  - затем создаём per-building группы, репарентим этажи/комнаты, регистрируем HitboxManager
+  - UI: InfoPanel/Inspector/EditorUI (как раньше)
+*/
+
+let scene, camera, renderer, controls;
+let modelLoader, debugManager, dataManager;
+let infoPanel, inspector, editorUI;
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+const buildingsConfig = []; // [{key, cfg}]
+const buildingStates = new Map(); // key -> {cfg, group, floorsMeshes, roomsMeshes, hitboxManager}
+let activeBuildingKey = null;
+const navStack = [];
+
+// ---------------- utilities ----------------
+function pushNav(state, meta = {}) {
+  navStack.push({ state, meta });
+}
+function popNav() {
+  navStack.pop();
+  return navStack[navStack.length - 1];
+}
+
+function safeHideAll(hitboxMgr) {
+  if (!hitboxMgr) return;
+  if (typeof hitboxMgr.hideAllHitboxes === "function") {
+    try {
+      hitboxMgr.hideAllHitboxes();
+      return;
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  if (typeof hitboxMgr.setLevel === "function") {
+    try {
+      hitboxMgr.setLevel("none");
+      return;
+    } catch (e) {
+      /* ignore */
+    }
+  }
+}
+
+function extractBuildingsFromDataManager(dm) {
+  if (!dm) return [];
+  if (typeof dm.getBuildings === "function") return dm.getBuildings();
+  if (typeof dm.getAll === "function") return dm.getAll();
+  if (typeof dm.getData === "function") {
+    const raw = dm.getData();
+    if (raw && typeof raw === "object") return Object.values(raw);
+  }
+  if (dm.data && typeof dm.data === "object") return Object.values(dm.data);
+  if (typeof dm.getBuilding === "function") return [dm.getBuilding()];
+  if (dm.building) return [dm.building];
+  return [];
+}
+
+// ---------------- three init ----------------
+function initThree() {
+  const container = document.getElementById("app") || document.body;
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x20232a);
+
+  camera = new THREE.PerspectiveCamera(
+    50,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    2000
+  );
+  camera.position.set(6, 6, 6);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  container.appendChild(renderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+  hemi.position.set(0, 10, 0);
+  scene.add(hemi);
+
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir.position.set(-5, 10, 5);
+  scene.add(dir);
+
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  renderer.domElement.addEventListener("pointermove", (e) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    for (const state of buildingStates.values()) {
+      try {
+        state.hitboxManager?.handleHover(raycaster);
+      } catch (err) {
+        console.warn("handleHover error", err);
+      }
+    }
+  });
+
+  renderer.domElement.addEventListener("pointerdown", (e) => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    for (const [key, state] of buildingStates.entries()) {
+      try {
+        const clicked = state.hitboxManager?.handleClick(raycaster);
+        if (clicked) {
+          handleClickableClick(key, state, clicked);
+          break;
+        }
+      } catch (err) {
+        console.warn("handleClick error", err);
+      }
+    }
+  });
+}
+
+// ---------------- load model ----------------
+async function loadModelScene(url) {
+  const loader = new GLTFLoader();
+  return await new Promise((res, rej) =>
+    loader.load(url, (g) => res(g.scene), undefined, rej)
+  );
+}
+
+// ---------------- click handling ----------------
+function handleClickableClick(buildingKey, state, clickableParentObject) {
+  const cfg = state.cfg;
+  const meshName = clickableParentObject && clickableParentObject.name;
+  console.log(`[DEBUG] Click in building ${buildingKey}:`, meshName);
+
+  if (clickableParentObject === state.group || meshName === cfg.meshName) {
+    showFloorsForBuilding(buildingKey);
+    return;
+  }
+
+  const floorCfg = (cfg.floors || []).find((f) => f.meshName === meshName);
+  if (floorCfg) {
+    showSingleFloorForBuilding(buildingKey, floorCfg.meshName);
+    return;
+  }
+
+  for (const f of cfg.floors || []) {
+    const room = (f.rooms || []).find((r) => r.meshName === meshName);
+    if (room) {
+      if (infoPanel?.show) infoPanel.show(room);
+      return;
+    }
+  }
+
+  if (typeof dataManager?.getMetaByMeshName === "function") {
+    const meta = dataManager.getMetaByMeshName(meshName);
+    if (meta) {
+      if (infoPanel?.show) infoPanel.show(meta);
+      return;
+    }
+  }
+
+  console.log("[DEBUG] Clicked unknown:", meshName);
+}
+
+// ---------------- show functions ----------------
+function showAllBuildingsOverview() {
+  activeBuildingKey = null;
+  navStack.length = 0;
+  console.log(
+    "[DEBUG] showAllBuildingsOverview: buildingStates.size =",
+    buildingStates.size
+  );
+
+  for (const [key, st] of buildingStates.entries()) {
+    st.group.visible = true;
+    st.group.traverse((o) => (o.visible = true));
+    try {
+      st.hitboxManager?.setLevel?.("building");
+    } catch {}
+    if (st.hitboxManager?.hitboxes?.floors)
+      st.hitboxManager.hitboxes.floors.forEach((f) => f.setVisible(false));
+    if (st.hitboxManager?.hitboxes?.rooms)
+      for (const arr of st.hitboxManager.hitboxes.rooms.values())
+        arr.forEach((r) => r.setVisible(false));
+  }
+
+  pushNav("buildings_overview");
+
+  const box = new THREE.Box3();
+  for (const st of buildingStates.values()) box.expandByObject(st.group);
+  if (!box.isEmpty()) {
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3()).length();
+    camera.position.set(center.x + size, center.y + size, center.z + size);
+    controls.target.copy(center);
+    controls.update();
+  } else {
+    console.warn(
+      "[DEBUG] showAllBuildingsOverview: bounding box empty -> applying safe camera"
+    );
+    camera.position.set(5, 5, 5);
+    controls.target.set(0, 0, 0);
+    controls.update();
+  }
+}
+
+function showFloorsForBuilding(buildingKey) {
+  const st = buildingStates.get(buildingKey);
+  if (!st) {
+    console.warn("showFloorsForBuilding: state not found", buildingKey);
+    return;
+  }
+  activeBuildingKey = buildingKey;
+
+  for (const [k, other] of buildingStates.entries()) {
+    if (k === buildingKey) {
+      other.group.visible = true;
+      other.group.children.forEach((ch) => {
+        ch.visible = st.floorsMeshes.includes(ch);
+      });
+      try {
+        other.hitboxManager?.setLevel?.("floors");
+      } catch {}
+      other.hitboxManager.hitboxes?.building?.setVisible?.(false);
+    } else {
+      other.group.visible = false;
+      safeHideAll(other.hitboxManager);
+    }
+  }
+
+  if (infoPanel?.show) infoPanel.show(st.cfg);
+  pushNav("building_floors", { buildingKey });
+
+  const box = new THREE.Box3().setFromObject(st.group);
+  if (!box.isEmpty()) {
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3()).length();
+    camera.position.set(
+      center.x + size * 0.9,
+      center.y + size * 0.6,
+      center.z + size * 0.9
+    );
+    controls.target.copy(center);
+    controls.update();
+  } else {
+    camera.position.set(5, 5, 5);
+    controls.target.set(0, 0, 0);
+    controls.update();
+  }
+}
+
+function showSingleFloorForBuilding(buildingKey, floorMeshName) {
+  const st = buildingStates.get(buildingKey);
+  if (!st) {
+    console.warn("showSingleFloorForBuilding: state not found", buildingKey);
+    return;
+  }
+  const floorMesh = st.group.getObjectByName(floorMeshName);
+  if (!floorMesh) {
+    console.warn("floorMesh not found:", floorMeshName);
+    return;
+  }
+
+  st.group.children.forEach((ch) => (ch.visible = ch === floorMesh));
+
+  safeHideAll(st.hitboxManager);
+  if (st.hitboxManager?.hitboxes?.floors)
+    st.hitboxManager.hitboxes.floors.forEach((f) => f.setVisible(false));
+
+  const roomsStore = st.hitboxManager?.hitboxes?.rooms;
+  if (roomsStore) {
+    if (typeof roomsStore.forEach === "function") {
+      roomsStore.forEach((arr, key) => {
+        if (key === floorMeshName) arr.forEach((r) => r.setVisible(true));
+        else arr.forEach((r) => r.setVisible(false));
+      });
+    } else {
+      for (const k in roomsStore) {
+        const arr = roomsStore[k];
+        if (k === floorMeshName) arr.forEach((r) => r.setVisible(true));
+        else arr.forEach((r) => r.setVisible(false));
+      }
+    }
+  }
+
+  const floorCfg = (st.cfg.floors || []).find(
+    (f) => f.meshName === floorMeshName
+  );
+  if (infoPanel?.show) infoPanel.show(floorCfg || st.cfg);
+
+  activeBuildingKey = buildingKey;
+  pushNav("building_floor", { buildingKey, floorMeshName });
+
+  const box = new THREE.Box3().setFromObject(floorMesh);
+  if (!box.isEmpty()) {
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3()).length();
+    camera.position.set(
+      center.x + size * 0.6,
+      center.y + size * 0.4,
+      center.z + size * 0.8
+    );
+    controls.target.copy(center);
+    controls.update();
+  } else {
+    camera.position.set(5, 5, 5);
+    controls.target.set(0, 0, 0);
+    controls.update();
+  }
+}
+
+function goBack() {
+  navStack.pop();
+  const last = navStack[navStack.length - 1];
+  if (!last) {
+    showAllBuildingsOverview();
+    return;
+  }
+  if (last.state === "buildings_overview") showAllBuildingsOverview();
+  else if (last.state === "building_floors")
+    showFloorsForBuilding(last.meta.buildingKey);
+  else if (last.state === "building_floor")
+    showSingleFloorForBuilding(last.meta.buildingKey, last.meta.floorMeshName);
+}
+
+// ---------------- main init ----------------
+async function initApp() {
+  initThree();
+
+  debugManager = new DebugManager({ container: document.body });
+  modelLoader = new ModelLoader();
+  dataManager = new DataManager("/data/structure.json");
+  await dataManager.load();
+  console.log("[DEBUG] DataManager loaded:", dataManager);
+
+  const extracted = extractBuildingsFromDataManager(dataManager);
+  console.log("[DEBUG] extracted buildings:", extracted);
+
+  if (!extracted || extracted.length === 0) {
+    console.warn("[DEBUG] no buildings in data -> creating placeholder scene");
+    addDiagnosticHelpers();
+    return;
+  }
+
+  extracted.forEach((item, idx) => {
+    const key = item.key || item.meshName || `building_${idx}`;
+    buildingsConfig.push({ key, cfg: item });
+  });
+
+  // загружаем общий GLB
+  const modelScene = await loadModelScene("/models/all.glb");
+  console.log("[DEBUG] modelScene loaded. Traversing names:");
+  modelScene.traverse((o) => {
+    if ((o.isMesh || o.type === "Group") && o.name) console.log(o.type, o.name);
+  });
+
+  // ---------------- AUTO-DETECT floors if missing ----------------
+  // Собираем все меши, содержащие "floor" в имени
+  const allFloorMeshNames = [];
+  modelScene.traverse((o) => {
+    if (o.isMesh && o.name && /floor/i.test(o.name))
+      allFloorMeshNames.push(o.name);
+  });
+  const uniqFloorNames = [...new Set(allFloorMeshNames)];
+  if (uniqFloorNames.length > 0)
+    console.log("[AUTO] Found floor meshes in GLB:", uniqFloorNames);
+
+  // Если всего одна конфигурация здания — назначаем все найденные этажи ей, если у неё нет floors
+  if (buildingsConfig.length === 1) {
+    const single = buildingsConfig[0];
+    if (!single.cfg.floors || single.cfg.floors.length === 0) {
+      single.cfg.floors = uniqFloorNames.map((mn) => ({
+        meshName: mn,
+        name: mn,
+        rooms: [],
+      }));
+      console.log(
+        "[AUTO] Single-building mode: filled floors for",
+        single.key,
+        single.cfg.floors
+      );
+    }
+  } else if (uniqFloorNames.length > 0) {
+    // Если несколько зданий — попытаться сопоставить по вхождению имени/ключа (эвристика)
+    for (const b of buildingsConfig) {
+      const needle = (b.key || b.cfg.name || "").toString().toLowerCase();
+      if (!b.cfg.floors || b.cfg.floors.length === 0) {
+        const matched = uniqFloorNames.filter((fn) => {
+          const low = fn.toLowerCase();
+          if (needle && needle.length >= 2 && low.includes(needle)) return true;
+          // попробуем совпадение по первой букве/символу
+          if (b.key && typeof b.key === "string") {
+            const first = b.key[0].toLowerCase();
+            if (first && low.startsWith(first)) return true;
+          }
+          return false;
+        });
+        if (matched.length > 0) {
+          b.cfg.floors = matched.map((mn) => ({
+            meshName: mn,
+            name: mn,
+            rooms: [],
+          }));
+          console.log("[AUTO] Matched floors for", b.key, matched);
+        } else {
+          console.log("[AUTO] No matched floors heuristically for", b.key);
+        }
+      }
+    }
+  }
+
+  // ---------------- create per-building groups and hitboxes ----------------
+  for (const b of buildingsConfig) {
+    const key = b.key;
+    const cfg = b.cfg;
+    console.log("[DEBUG] Processing building:", key, cfg);
+
+    // --- create or reuse group logic ---
+    let group = null;
+    const foundBuilding = cfg.meshName
+      ? modelScene.getObjectByName(cfg.meshName)
+      : null;
+    if (foundBuilding) {
+      group = foundBuilding;
+      if (group.parent && group.parent !== scene) {
+        group.parent.remove(group);
+        scene.add(group);
+      } else if (!scene.children.includes(group)) scene.add(group);
+      group.name = cfg.meshName || key;
+      console.log("[DEBUG] Used existing group from GLB for", key, group.name);
+    } else {
+      // try infer parent from first floor
+      let inferred = null;
+      if (cfg.floors && cfg.floors.length > 0) {
+        const firstFloor = modelScene.getObjectByName(cfg.floors[0].meshName);
+        if (firstFloor && firstFloor.parent && firstFloor.parent !== modelScene)
+          inferred = firstFloor.parent;
+      }
+      if (inferred) {
+        group = inferred;
+        if (group.parent && group.parent !== scene) {
+          group.parent.remove(group);
+          scene.add(group);
+        } else if (!scene.children.includes(group)) scene.add(group);
+        group.name = cfg.meshName || group.name || key;
+        console.log("[DEBUG] Inferred group for", key, "->", group.name);
+      } else {
+        group = new THREE.Group();
+        group.name = cfg.meshName || key;
+        scene.add(group);
+        console.log("[DEBUG] Creating new group fallback for building", key);
+      }
+    }
+
+    // repareting floors
+    const floorsMeshes = [];
+    (cfg.floors || []).forEach((f) => {
+      const m = modelScene.getObjectByName(f.meshName);
+      if (m) {
+        if (m.parent !== group) {
+          if (m.parent) m.parent.remove(m);
+          group.add(m);
+        }
+        floorsMeshes.push(m);
+      } else {
+        console.warn(
+          `Floor mesh "${f.meshName}" not found in GLB for building ${key}.`
+        );
+      }
+    });
+
+    // repareting rooms and hiding them
+    const roomsMeshes = [];
+    (cfg.floors || []).forEach((f) => {
+      (f.rooms || []).forEach((r) => {
+        const rm = modelScene.getObjectByName(r.meshName);
+        if (rm) {
+          if (rm.parent !== group) {
+            if (rm.parent) rm.parent.remove(rm);
+            group.add(rm);
+          }
+          rm.visible = false;
+          roomsMeshes.push(rm);
+        } else {
+          console.warn(
+            `Room mesh "${r.meshName}" not found in GLB for building ${key}.`
+          );
+        }
+      });
+    });
+
+    // create hitbox manager
+    const manager = new HitboxManager(scene, camera, debugManager);
+    if (manager.events?.addEventListener) {
+      manager.events.addEventListener("objectClicked", (e) => {
+        const parent = e.detail?.parent;
+        if (!parent) return;
+        handleClickableClick(
+          key,
+          { cfg, group, floorsMeshes, roomsMeshes, hitboxManager: manager },
+          parent
+        );
+      });
+    }
+
+    try {
+      manager.createBuildingHitbox(group);
+    } catch (e) {
+      console.warn("createBuildingHitbox failed:", e);
+    }
+    try {
+      manager.createFloorHitboxes(floorsMeshes);
+    } catch (e) {
+      console.warn("createFloorHitboxes failed:", e);
+    }
+
+    for (const f of cfg.floors || []) {
+      const roomsForFloor = (f.rooms || [])
+        .map((r) => group.getObjectByName(r.meshName))
+        .filter(Boolean);
+      if (roomsForFloor.length > 0) {
+        try {
+          manager.createRoomHitboxes(f.meshName, roomsForFloor);
+        } catch (e) {
+          console.warn("createRoomHitboxes failed for", f.meshName, e);
+        }
+      }
+    }
+
+    const miscRooms = roomsMeshes.filter(
+      (rm) =>
+        !(cfg.floors || []).some((f) =>
+          f.rooms?.some((rr) => rr.meshName === rm.name)
+        )
+    );
+    if (miscRooms.length > 0) {
+      try {
+        manager.createRoomHitboxes("misc", miscRooms);
+      } catch (e) {
+        console.warn("createRoomHitboxes misc failed", e);
+      }
+    }
+
+    buildingStates.set(key, {
+      cfg,
+      group,
+      floorsMeshes,
+      roomsMeshes,
+      hitboxManager: manager,
+    });
+    console.log(
+      "[DEBUG] buildingState saved for",
+      key,
+      "floors:",
+      floorsMeshes.length,
+      "rooms:",
+      roomsMeshes.length
+    );
+  } // end for buildingsConfig
+
+  // create UI
+  infoPanel = new InfoPanel({ container: document.body, onBack: goBack });
+  inspector = new Inspector({ container: document.body });
+  editorUI = new EditorUI({ container: document.body, dataManager });
+
+  window._scene = scene;
+  window._buildingStates = buildingStates;
+
+  if (buildingStates.size === 0) addDiagnosticHelpers();
+
+  showAllBuildingsOverview();
+  animate();
+}
+
+// diagnostic helpers
+function addDiagnosticHelpers() {
+  const grid = new THREE.GridHelper(10, 10, 0x444444, 0x222222);
+  scene.add(grid);
+  const axes = new THREE.AxesHelper(2);
+  scene.add(axes);
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({ color: 0x00aa00 })
+  );
+  box.position.set(0.5, 0.5, 0);
+  scene.add(box);
+  camera.position.set(4, 4, 4);
+  controls.target.set(0, 0, 0);
+  controls.update();
+  let el = document.getElementById("diagnostic-message");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "diagnostic-message";
+    el.style.position = "fixed";
+    el.style.left = "12px";
+    el.style.bottom = "12px";
+    el.style.padding = "8px 12px";
+    el.style.background = "rgba(0,0,0,0.6)";
+    el.style.color = "white";
+    el.style.fontFamily = "monospace";
+    el.style.zIndex = "9999";
+    document.body.appendChild(el);
+  }
+  el.innerText = "Диагностика: модель/конфиг. Проверь консоль.";
+}
+
+// main loop
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  for (const st of buildingStates.values()) {
+    try {
+      st.hitboxManager?.update();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  renderer.render(scene, camera);
+}
+
+// start
+window.addEventListener("DOMContentLoaded", () => {
+  initApp().catch((err) => {
+    console.error("initApp error:", err);
+    addDiagnosticHelpers();
+  });
+});

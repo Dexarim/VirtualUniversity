@@ -1,0 +1,578 @@
+// main.js
+import * as THREE from "three";
+import GUI from "lil-gui";
+import gsap from "gsap";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+
+import { ModelLoader } from "./core/ModelLoader.js";
+import { DebugManager } from "./core/DebugManager.js";
+import { HitboxManager } from "./core/HitboxManager.js";
+
+// =======================
+// === БАЗОВАЯ ИНИЦИАЛИЗАЦИЯ ===
+// =======================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x888888);
+
+const camera = new THREE.PerspectiveCamera(
+  75,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
+);
+camera.position.set(3, 3, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+dirLight.position.set(5, 10, 5);
+scene.add(dirLight);
+
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true;
+
+const debug = new DebugManager();
+const hitboxManager = new HitboxManager(scene, camera, debug);
+const modelLoader = new ModelLoader();
+
+// GUI параметры (объект подготовлен заранее)
+const guiParams = {
+  debugMode: false,
+  currentLevel: "building", // building | floors | floor | cabinets
+  currentFloorName: null,
+};
+
+// Raycast helpers
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let pointerDirty = false;
+
+// =======================
+// === ЗАГРУЗКА МОДЕЛИ ===
+// =======================
+const gltf = await modelLoader.load("./models/building.glb");
+
+console.log(
+  "🧱 Объекты в сцене:",
+  gltf.scene.children.map((o) => o.name)
+);
+const floor1 = gltf.scene.getObjectByName("Plane");
+const floor2 = gltf.scene.getObjectByName("Plane2");
+
+// === ГРУППА ЗДАНИЯ ===
+const buildingGroup = new THREE.Group();
+buildingGroup.name = "Building";
+
+// клонируем этажи (если есть)
+let clonedFloors = [];
+if (floor1) {
+  const clone1 = floor1.clone(true);
+  clone1.name = "Floor_1";
+  buildingGroup.add(clone1);
+  clonedFloors.push(clone1);
+}
+if (floor2) {
+  const clone2 = floor2.clone(true);
+  clone2.name = "Floor_2";
+  buildingGroup.add(clone2);
+  clonedFloors.push(clone2);
+}
+
+scene.add(buildingGroup);
+// прячем оригинальные меши
+gltf.scene.traverse((obj) => {
+  if (obj.isMesh) obj.visible = false;
+});
+
+// =======================
+// === CABINETS SETUP ===
+// =======================
+const cabinetsGroup = new THREE.Group();
+cabinetsGroup.name = "Cabinets";
+buildingGroup.add(cabinetsGroup);
+
+const cabinetClones = []; // без привязки к этажу
+const cabinetByFloor = new Map(); // floorClone.name -> [mesh,...]
+
+// найти ancestor-floor в оригинальном gltf
+function findAncestorFloorInGltf(originalObj, floorSources) {
+  let cur = originalObj.parent;
+  while (cur) {
+    if (floorSources.includes(cur)) return cur;
+    cur = cur.parent;
+  }
+  return null;
+}
+
+const cabinetNameRegex = /kabinet|kabine|cabinet|kab/i;
+const cabinetSources = [];
+gltf.scene.traverse((obj) => {
+  if (obj.isMesh && obj.name && cabinetNameRegex.test(obj.name)) {
+    cabinetSources.push(obj);
+  }
+});
+
+if (debug.enabled)
+  console.log(
+    "Найденные источники кабинетов:",
+    cabinetSources.map((o) => o.name)
+  );
+
+const floorSources = [];
+if (floor1) floorSources.push(floor1);
+if (floor2) floorSources.push(floor2);
+
+// клонируем кабинеты и распределяем по этажам
+cabinetSources.forEach((src, idx) => {
+  const clone = src.clone(true);
+  clone.name = src.name && src.name.length ? src.name : `Cabinet_${idx + 1}`;
+
+  const ancestorFloor = findAncestorFloorInGltf(src, floorSources);
+  if (ancestorFloor && ancestorFloor.name) {
+    const floorClone = clonedFloors.find(
+      (f) =>
+        f.name.toLowerCase().includes(ancestorFloor.name.toLowerCase()) ||
+        ancestorFloor.name.toLowerCase().includes(f.name.toLowerCase())
+    );
+    if (floorClone) {
+      floorClone.add(clone);
+      const key = floorClone.name;
+      if (!cabinetByFloor.has(key)) cabinetByFloor.set(key, []);
+      cabinetByFloor.get(key).push(clone);
+    } else {
+      cabinetsGroup.add(clone);
+      cabinetClones.push(clone);
+    }
+  } else {
+    cabinetsGroup.add(clone);
+    cabinetClones.push(clone);
+  }
+  clone.visible = false;
+});
+
+// =======================
+// === ИНИЦИАЛИЗАЦИЯ ХИТБОКСОВ ===
+// =======================
+hitboxManager.createBuildingHitbox(buildingGroup);
+hitboxManager.createFloorHitboxes(clonedFloors);
+
+// создаём хитбоксы комнат (кабинетов) по этажам
+for (const [floorName, list] of cabinetByFloor.entries()) {
+  hitboxManager.createRoomHitboxes(floorName, list);
+}
+if (cabinetClones.length > 0) {
+  hitboxManager.createRoomHitboxes("misc_cabinets", cabinetClones);
+}
+
+// =======================
+// === УТИЛИТЫ ПО ХИТБОКСАМ ===
+// =======================
+function setBuildingHitboxVisible(state) {
+  const b = hitboxManager.hitboxes.building;
+  if (!b) return;
+  b.setVisible(state);
+  b.showDebug(debug.enabled && state);
+  if (state) b.markDirty();
+}
+function setFloorHitboxesVisible(state) {
+  hitboxManager.hitboxes.floors.forEach((f) => {
+    f.setVisible(state);
+    f.showDebug(debug.enabled && state);
+    if (state) f.markDirty();
+  });
+}
+function setRoomHitboxesForFloorVisible(floorName, state) {
+  const rooms = hitboxManager.hitboxes.rooms.get(floorName);
+  if (!rooms) return;
+  rooms.forEach((r) => {
+    r.setVisible(state);
+    r.showDebug(debug.enabled && state);
+    if (state) r.markDirty();
+  });
+}
+function setAllRoomHitboxesVisible(state) {
+  for (const [key, arr] of hitboxManager.hitboxes.rooms.entries()) {
+    arr.forEach((r) => {
+      r.setVisible(state);
+      r.showDebug(debug.enabled && state);
+      if (state) r.markDirty();
+    });
+  }
+}
+
+// Получить активные ClickableObject'ы в зависимости от guiParams.currentLevel
+function getActiveClickables() {
+  if (guiParams.currentLevel === "building") {
+    return hitboxManager.hitboxes.building
+      ? [hitboxManager.hitboxes.building]
+      : [];
+  }
+  if (guiParams.currentLevel === "floors") {
+    return hitboxManager.hitboxes.floors || [];
+  }
+  if (guiParams.currentLevel === "floor" && guiParams.currentFloorName) {
+    const rooms = hitboxManager.hitboxes.rooms.get(guiParams.currentFloorName);
+    if (rooms && rooms.length) return rooms;
+    return [];
+  }
+  if (guiParams.currentLevel === "cabinets") {
+    const out = [];
+    for (const arr of hitboxManager.hitboxes.rooms.values()) out.push(...arr);
+    return out;
+  }
+  return [];
+}
+function getActiveHitboxMeshesForRaycast() {
+  const clickables = getActiveClickables();
+  return clickables.map((c) => c.hitbox).filter(Boolean);
+}
+function resetHoverOn(clickables) {
+  clickables.forEach((c) => {
+    if (c && typeof c.setHover === "function") c.setHover(false);
+  });
+}
+
+// =======================
+// === ФУНКЦИИ УПРАВЛЕНИЯ КАМЕРОЙ ===
+// =======================
+function focusCameraOnObject(object, opts = {}) {
+  if (!object) return;
+  const {
+    zoomFactor = 1.2,
+    distanceFactor = 1.6,
+    targetYOffset = 0.5,
+    preserveOrientation = false,
+  } = opts;
+
+  const box = new THREE.Box3().setFromObject(object);
+  const size = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  box.getSize(size);
+  box.getCenter(center);
+
+  const curDir = camera.position.clone().sub(orbit.target);
+  const dirNorm =
+    curDir.length() > 0
+      ? curDir.clone().normalize()
+      : new THREE.Vector3(0, 0, 1);
+
+  const newTarget = center.clone().add(new THREE.Vector3(0, targetYOffset, 0));
+
+  const minDistance = 2;
+  const maxDistance = 40;
+  const desiredBase = Math.min(
+    Math.max(size.length() * zoomFactor, minDistance),
+    maxDistance
+  );
+  const desiredDistance = desiredBase * distanceFactor;
+
+  if (preserveOrientation) {
+    const delta = newTarget.clone().sub(orbit.target);
+    const newCameraPos = camera.position.clone().add(delta);
+    gsap.to(camera.position, {
+      duration: 1.0,
+      x: newCameraPos.x,
+      y: newCameraPos.y,
+      z: newCameraPos.z,
+      ease: "power2.out",
+    });
+    gsap.to(orbit.target, {
+      duration: 1.0,
+      x: orbit.target.x + delta.x,
+      y: orbit.target.y + delta.y,
+      z: orbit.target.z + delta.z,
+      ease: "power2.out",
+      onUpdate: () => orbit.update(),
+    });
+    return;
+  } else {
+    const newCameraPos = newTarget
+      .clone()
+      .add(dirNorm.clone().multiplyScalar(desiredDistance));
+    gsap.to(camera.position, {
+      duration: 1.2,
+      x: newCameraPos.x,
+      y: newCameraPos.y,
+      z: newCameraPos.z,
+      ease: "power2.out",
+      onUpdate: () => orbit.update(),
+    });
+    gsap.to(orbit.target, {
+      duration: 1.2,
+      x: newTarget.x,
+      y: newTarget.y,
+      z: newTarget.z,
+      ease: "power2.out",
+      onUpdate: () => orbit.update(),
+    });
+    return;
+  }
+}
+
+// =======================
+// === ФУНКЦИИ ПОКАЗА УРОВНЕЙ/КАБИНЕТОВ ===
+// =======================
+function showBuilding() {
+  guiParams.currentLevel = "building";
+  guiParams.currentFloorName = null;
+
+  // возвращаем этажи в группу и скрываем их
+  clonedFloors.forEach((f) => {
+    if (scene.children.includes(f)) scene.remove(f);
+    if (!buildingGroup.children.includes(f)) buildingGroup.add(f);
+    f.visible = false;
+  });
+
+  // хитбоксы
+  setBuildingHitboxVisible(true);
+  setFloorHitboxesVisible(false);
+  setAllRoomHitboxesVisible(false);
+
+  hitboxManager.setLevel("building");
+
+  focusCameraOnObject(buildingGroup, {
+    zoomFactor: 1.8,
+    distanceFactor: 1.8,
+    targetYOffset: 0.8,
+  });
+}
+function showFloors() {
+  guiParams.currentLevel = "floors";
+  guiParams.currentFloorName = null;
+
+  buildingGroup.visible = false;
+  clonedFloors.forEach((f) => {
+    if (!scene.children.includes(f)) scene.add(f);
+    f.visible = true;
+  });
+
+  setBuildingHitboxVisible(false);
+  setFloorHitboxesVisible(true);
+  setAllRoomHitboxesVisible(false);
+
+  hitboxManager.setLevel("floors");
+
+  focusCameraOnObject(clonedFloors[0] || buildingGroup, {
+    zoomFactor: 1.2,
+    distanceFactor: 1.1,
+    targetYOffset: 0.2,
+  });
+}
+function showSingleFloor(selectedFloor) {
+  if (!selectedFloor) return;
+  guiParams.currentLevel = "floor";
+  guiParams.currentFloorName = selectedFloor.name;
+
+  clonedFloors.forEach((f) => (f.visible = f === selectedFloor));
+
+  setBuildingHitboxVisible(false);
+  setFloorHitboxesVisible(false);
+
+  setRoomHitboxesForFloorVisible(selectedFloor.name, true);
+
+  hitboxManager.setLevel("floor", selectedFloor.name);
+
+  focusCameraOnObject(selectedFloor, {
+    zoomFactor: 0.9,
+    distanceFactor: 1.8,
+    targetYOffset: 0.2,
+  });
+}
+function showCabinetsForFloor(selectedFloor) {
+  if (!selectedFloor) return;
+  showSingleFloor(selectedFloor);
+
+  const list = cabinetByFloor.get(selectedFloor.name) || [];
+  if (list.length === 0) {
+    console.log(`Кабинетов для ${selectedFloor.name} не найдено.`);
+    return;
+  }
+  hideAllCabinets();
+  list.forEach((c) => (c.visible = true));
+
+  // пометка хитбоксов уже выполнена showSingleFloor через setRoomHitboxesForFloorVisible
+  const first = list[0];
+  if (first)
+    focusCameraOnObject(first, {
+      zoomFactor: 0.7,
+      distanceFactor: 1.2,
+      targetYOffset: 0.15,
+    });
+}
+function showAllCabinets() {
+  hideAllCabinets();
+  for (const arr of cabinetByFloor.values())
+    arr.forEach((m) => (m.visible = true));
+  cabinetClones.forEach((m) => (m.visible = true));
+
+  setAllRoomHitboxesVisible(true);
+  focusCameraOnObject(cabinetsGroup, {
+    zoomFactor: 1.4,
+    distanceFactor: 1.2,
+    targetYOffset: 0.4,
+  });
+}
+function hideAllCabinets() {
+  for (const arr of cabinetByFloor.values())
+    arr.forEach((m) => (m.visible = false));
+  cabinetClones.forEach((m) => (m.visible = false));
+  setAllRoomHitboxesVisible(false);
+}
+
+// =======================
+// === GUI (создаём ПОСЛЕ функций) ===
+// =======================
+const gui = new GUI({ title: "🏗️ Debug Панель", width: 320 });
+gui
+  .add(guiParams, "debugMode")
+  .name("🧩 Debug Mode")
+  .onChange((v) => {
+    debug.set(v);
+    if (guiParams.currentLevel === "building") {
+      setBuildingHitboxVisible(true);
+      setFloorHitboxesVisible(false);
+      setAllRoomHitboxesVisible(false);
+    } else if (guiParams.currentLevel === "floors") {
+      setBuildingHitboxVisible(false);
+      setFloorHitboxesVisible(true);
+      setAllRoomHitboxesVisible(false);
+    } else if (
+      guiParams.currentLevel === "floor" &&
+      guiParams.currentFloorName
+    ) {
+      setBuildingHitboxVisible(false);
+      setFloorHitboxesVisible(false);
+      setRoomHitboxesForFloorVisible(guiParams.currentFloorName, true);
+    }
+  });
+gui.add(guiParams, "currentLevel").name("📊 Уровень").listen();
+gui.add({ back: () => goBack() }, "back").name("↩ Назад");
+
+// GUI кнопки
+if (clonedFloors.length > 0) {
+  gui.add({ showFloors }, "showFloors").name("Показать этажи");
+  gui.add({ showBuilding }, "showBuilding").name("Показать здание");
+}
+gui.add({ showAllCabinets }, "showAllCabinets").name("Показать все кабинеты");
+gui.add({ hideAllCabinets }, "hideAllCabinets").name("Скрыть кабинеты");
+if (clonedFloors[0])
+  gui
+    .add(
+      { showCab_Floor1: () => showCabinetsForFloor(clonedFloors[0]) },
+      "showCab_Floor1"
+    )
+    .name("Показать кабинеты Floor_1");
+if (clonedFloors[1])
+  gui
+    .add(
+      { showCab_Floor2: () => showCabinetsForFloor(clonedFloors[1]) },
+      "showCab_Floor2"
+    )
+    .name("Показать кабинеты Floor_2");
+
+// =======================
+// === HOVER / CLICK ===
+// =======================
+window.addEventListener("pointermove", (event) => {
+  pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+  pointerDirty = true;
+});
+
+function handleHoverLocal() {
+  const meshes = getActiveHitboxMeshesForRaycast();
+  if (meshes.length === 0) {
+    resetHoverOn([
+      ...(hitboxManager.hitboxes.building
+        ? [hitboxManager.hitboxes.building]
+        : []),
+      ...hitboxManager.hitboxes.floors,
+      ...[].concat(...Array.from(hitboxManager.hitboxes.rooms.values())),
+    ]);
+    return;
+  }
+  raycaster.setFromCamera(pointer, camera);
+  const intersects = raycaster.intersectObjects(meshes, true);
+  const activeClickables = getActiveClickables();
+  resetHoverOn(activeClickables);
+  if (intersects.length === 0) return;
+  const mesh = intersects[0].object;
+  const clickedClickable = hitboxManager.findClickableByMesh(mesh);
+  if (clickedClickable) clickedClickable.setHover(true);
+}
+
+window.addEventListener("click", () => {
+  raycaster.setFromCamera(pointer, camera);
+  const meshes = getActiveHitboxMeshesForRaycast();
+  if (meshes.length === 0) return;
+  const intersects = raycaster.intersectObjects(meshes, true);
+  if (intersects.length === 0) return;
+  const mesh = intersects[0].object;
+  const clickable = hitboxManager.findClickableByMesh(mesh);
+  if (!clickable || !clickable.visible) return;
+  const parent = clickable.parentObject;
+  if (!parent) return;
+
+  if (guiParams.currentLevel === "building") {
+    if (parent.name === "Building") {
+      showFloors();
+      setBuildingHitboxVisible(false);
+      setFloorHitboxesVisible(true);
+    }
+  } else if (guiParams.currentLevel === "floors") {
+    if (parent.name && parent.name.startsWith("Floor")) {
+      // переключаемся на этаж (покажем кабинеты-хитбоксы для этого этажа)
+      showSingleFloor(parent);
+      setFloorHitboxesVisible(false);
+      setRoomHitboxesForFloorVisible(parent.name, true);
+    }
+  } else if (guiParams.currentLevel === "floor") {
+    // клик по кабинету
+    console.log("Клик по кабинету/объекту:", parent.name);
+    focusCameraOnObject(parent, {
+      zoomFactor: 0.7,
+      distanceFactor: 1.2,
+      targetYOffset: 0.15,
+    });
+  }
+});
+
+// =======================
+// === NAV / BACK ===
+// =======================
+function goBack() {
+  if (guiParams.currentLevel === "floor") {
+    showFloors();
+  } else if (guiParams.currentLevel === "floors") {
+    showBuilding();
+  } else {
+    showBuilding();
+  }
+}
+
+// =======================
+// === АНИМАЦИЯ / RESIZE ===
+// =======================
+function animate() {
+  requestAnimationFrame(animate);
+  orbit.update();
+  hitboxManager.update();
+  if (pointerDirty) {
+    pointerDirty = false;
+    handleHoverLocal();
+  }
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// стартовое состояние — показываем здание
+showBuilding();

@@ -1,0 +1,91 @@
+,
+  "new": {
+    "name": "Новый корпус TTTU",
+    "description": "Новый корпус института и коледжа, 4 этажа",
+    "meshName": "Building",
+    "floors": [
+      {
+        "meshName": "N1floor",
+        "name": "Этаж 1",
+        "description": "Холл и кабинеты",
+        "rooms": [
+          {
+            "meshName": "kabinet1",
+            "name": "Кабинет 101",
+            "description": "Кафедра М"
+          },
+          {
+            "meshName": "kabinet2",
+            "name": "Кабинет 102",
+            "description": "Кафедра"
+          }
+        ]
+      },
+      {
+        "meshName": "N2floor",
+        "name": "Этаж 2",
+        "rooms": [
+          {
+            "meshName": "kabinet3",
+            "name": "Холл 2 этажа",
+            "description": "Лаборатория"
+          }
+        ]
+      },
+      {
+        "meshName": "N3floor",
+        "name": "Этаж 3",
+        "rooms": []
+      },
+      {
+        "meshName": "N4floor",
+        "name": "Этаж 4",
+        "rooms": []
+      }
+    ]
+  },
+  "Dorm": {
+    "name": "Общежитие TTTU",
+    "description": "Новый корпус института и коледжа, 4 этажа",
+    "meshName": "Building",
+    "floors": [
+      {
+        "meshName": "O1floor",
+        "name": "Этаж 1",
+        "description": "Холл и кабинеты",
+        "rooms": [
+          {
+            "meshName": "kabinet1",
+            "name": "Кабинет 101",
+            "description": "Кафедра М"
+          },
+          {
+            "meshName": "kabinet2",
+            "name": "Кабинет 102",
+            "description": "Кафедра"
+          }
+        ]
+      },
+      {
+        "meshName": "O2floor",
+        "name": "Этаж 2",
+        "rooms": [
+          {
+            "meshName": "kabinet3",
+            "name": "Холл 2 этажа",
+            "description": "Лаборатория"
+          }
+        ]
+      },
+      {
+        "meshName": "O3floor",
+        "name": "Этаж 3",
+        "rooms": []
+      },
+      {
+        "meshName": "O4floor",
+        "name": "Этаж 4",
+        "rooms": []
+      }
+    ]
+  }
