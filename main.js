@@ -10,6 +10,18 @@ import { InfoPanel } from "./ui/InfoPanel.js";
 import { PanoramaOverlay } from "./ui/PanoramaOverlay.js";
 import { Tooltip } from "./ui/Tooltip.js";
 import { RoomFilter } from "./ui/RoomFilter.js";
+import { AppHeader } from "./ui/AppHeader.js";
+import {
+  designTokens,
+  ensureDesignSystem,
+} from "./ui/designSystem.js";
+import {
+  getLanguage,
+  getLocalizedField,
+  localizeDataValue,
+  subscribeLanguageChange,
+  t,
+} from "./ui/i18n.js";
 
 // ---------------- globals ----------------
 
@@ -35,6 +47,7 @@ let navStack = [];
 
 // Панорамный оверлей
 let panoOverlay = null;
+let appHeader = null;
 
 // ---------------- camera configuration ----------------
 const CAMERA_SETTINGS = {
@@ -57,6 +70,81 @@ const ROOM_HIGHLIGHT_BREATH_MAX_EMISSIVE = 0.72;
 
 const hoverPulseStates = new Map();
 const breathingRoomStates = new Map();
+
+function getLocalizedName(entity, fallback = "") {
+  return getLocalizedField(entity, "name", fallback);
+}
+
+function getLocalizedDescription(entity, fallback = "") {
+  return getLocalizedField(entity, "description", fallback);
+}
+
+function getLocalizedHotspotLabel(label = "") {
+  return localizeDataValue(label, getLanguage());
+}
+
+function getLocalizedPanoramas(panoramas = []) {
+  return (panoramas || []).map((pano) => ({
+    ...pano,
+    _originalTitle: pano._originalTitle || pano.title || "",
+    _originalName: pano._originalName || pano.name || "",
+    _originalDescription: pano._originalDescription || pano.description || "",
+    title: getLocalizedField(pano, "title", pano.title || ""),
+    name: getLocalizedField(
+      pano,
+      "name",
+      pano.name || pano.title || ""
+    ),
+    description: getLocalizedDescription(pano, pano.description || ""),
+    hotspots: (pano.hotspots || []).map((hotspot) => ({
+      ...hotspot,
+      _originalLabel: hotspot._originalLabel || hotspot.label || "",
+      label: getLocalizedHotspotLabel(hotspot._originalLabel || hotspot.label || ""),
+    })),
+  }));
+}
+
+function updateLocalizedSceneMetadata() {
+  for (const [, st] of buildingStates.entries()) {
+    const cfg = st.cfg;
+    if (!cfg) continue;
+
+    st.group.userData = st.group.userData || {};
+    st.group.userData.name = getLocalizedName(cfg, cfg.name || "");
+    st.group.userData.description = getLocalizedDescription(
+      cfg,
+      cfg.description || ""
+    );
+
+    (cfg.floors || []).forEach((floorCfg) => {
+      const floorMesh = st.group.getObjectByName(floorCfg.meshName);
+      if (!floorMesh) return;
+      floorMesh.userData = floorMesh.userData || {};
+      floorMesh.userData.name = getLocalizedName(
+        floorCfg,
+        floorCfg.name || floorCfg.meshName
+      );
+      floorMesh.userData.description = getLocalizedDescription(
+        floorCfg,
+        floorCfg.description || ""
+      );
+
+      (floorCfg.rooms || []).forEach((roomCfg) => {
+        const roomMesh = st.group.getObjectByName(roomCfg.meshName);
+        if (!roomMesh) return;
+        roomMesh.userData = roomMesh.userData || {};
+        roomMesh.userData.name = getLocalizedName(
+          roomCfg,
+          roomCfg.name || roomCfg.meshName
+        );
+        roomMesh.userData.description = getLocalizedDescription(
+          roomCfg,
+          roomCfg.description || ""
+        );
+      });
+    });
+  }
+}
 
 // ---------------- NAV helpers ----------------
 function pushNav(state, meta = {}) {
@@ -204,9 +292,15 @@ function buildInfoTitle(...parts) {
 
 function buildInfoMeta({ building = null, floor = null, room = null } = {}) {
   return {
-    name: buildInfoTitle(building?.name, floor?.name, room?.name),
-    description:
-      room?.description || floor?.description || building?.description || "",
+    name: buildInfoTitle(
+      getLocalizedName(building, building?.name),
+      getLocalizedName(floor, floor?.name),
+      getLocalizedName(room, room?.name)
+    ),
+    description: getLocalizedDescription(
+      room || floor || building,
+      room?.description || floor?.description || building?.description || ""
+    ),
     meshName: room?.meshName || floor?.meshName || building?.meshName || "",
   };
 }
@@ -270,11 +364,274 @@ function refreshInfoPanelForCurrentState() {
   infoPanel.hide?.();
 }
 
+function updateStaticHintText() {
+  const hint = document.getElementById("fidget");
+  if (hint) {
+    hint.textContent = `\u{1F44B} ${t("hover_hint")}`;
+  }
+}
+
+function buildFloorRoomsMap(cfg, group) {
+  const map = new Map();
+
+  (cfg?.floors || []).forEach((floorCfg) => {
+    const roomMeshes = (floorCfg.rooms || [])
+      .map((room) => group.getObjectByName(room.meshName))
+      .filter(Boolean);
+    map.set(floorCfg.meshName, roomMeshes);
+  });
+
+  return map;
+}
+
+function getTopLevelGroupChild(group, object) {
+  if (!group || !object) return null;
+
+  let current = object;
+  while (current && current.parent && current.parent !== group) {
+    current = current.parent;
+  }
+
+  return current?.parent === group ? current : null;
+}
+
+function isDescendantOf(object, ancestor) {
+  let current = object;
+  while (current) {
+    if (current === ancestor) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
+function attachObjectToGroup(group, object) {
+  if (!group || !object || isDescendantOf(object, group)) return object;
+
+  if (typeof group.attach === "function") {
+    group.attach(object);
+    return object;
+  }
+
+  if (object.parent) {
+    object.parent.remove(object);
+  }
+  group.add(object);
+  return object;
+}
+
+function collectConfiguredVisualMeshNames(cfg) {
+  const names = new Set();
+
+  (cfg?.alwaysVisibleMeshes || []).forEach((meshName) => {
+    if (meshName) names.add(meshName);
+  });
+
+  (cfg?.floors || []).forEach((floorCfg) => {
+    (floorCfg.displayMeshes || []).forEach((meshName) => {
+      if (meshName) names.add(meshName);
+    });
+  });
+
+  return Array.from(names);
+}
+
+function attachConfiguredVisualMeshes(modelScene, group, cfg, key) {
+  const attached = [];
+
+  collectConfiguredVisualMeshNames(cfg).forEach((meshName) => {
+    let object = group.getObjectByName(meshName);
+    if (!object) {
+      object = modelScene.getObjectByName(meshName);
+    }
+
+    if (!object) {
+      console.warn(
+        "[WARN] Configured visual mesh not found in GLB:",
+        meshName,
+        "for",
+        key
+      );
+      return;
+    }
+
+    attachObjectToGroup(group, object);
+    attached.push(object);
+  });
+
+  return attached;
+}
+
+function buildChildVisibilityMeta(group, cfg, floorsMeshes, floorRoomsMap) {
+  const floorInfos = (floorsMeshes || []).map((mesh) => {
+    const box = new THREE.Box3().setFromObject(mesh);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    return {
+      mesh,
+      floorMeshName: mesh.name,
+      centerY: center.y,
+      height: size.y,
+    };
+  });
+
+  const buildingBox = new THREE.Box3().setFromObject(group);
+  const buildingHeight = buildingBox.getSize(new THREE.Vector3()).y || 1;
+  const roomFloorMap = new Map();
+  for (const [floorMeshName, roomMeshes] of floorRoomsMap.entries()) {
+    roomMeshes.forEach((mesh) => roomFloorMap.set(mesh.uuid, floorMeshName));
+  }
+
+  const metaByUuid = new Map();
+  const priorityByUuid = new Map();
+
+  const assignMeta = (child, meta, priority = 1) => {
+    if (!child) return;
+
+    const currentPriority = priorityByUuid.get(child.uuid) ?? -1;
+    if (currentPriority > priority) return;
+
+    metaByUuid.set(child.uuid, meta);
+    priorityByUuid.set(child.uuid, priority);
+  };
+
+  (cfg?.alwaysVisibleMeshes || []).forEach((meshName) => {
+    const object = group.getObjectByName(meshName);
+    const child = getTopLevelGroupChild(group, object);
+    assignMeta(child, { role: "global", floorMeshName: null, persistent: true }, 10);
+  });
+
+  (cfg?.floors || []).forEach((floorCfg) => {
+    const floorObject = group.getObjectByName(floorCfg.meshName);
+    assignMeta(
+      getTopLevelGroupChild(group, floorObject),
+      { role: "floor", floorMeshName: floorCfg.meshName, persistent: false },
+      8
+    );
+
+    (floorCfg.displayMeshes || []).forEach((meshName) => {
+      const object = group.getObjectByName(meshName);
+      assignMeta(
+        getTopLevelGroupChild(group, object),
+        { role: "decor", floorMeshName: floorCfg.meshName, persistent: false },
+        7
+      );
+    });
+
+    (floorCfg.rooms || []).forEach((roomCfg) => {
+      const object = group.getObjectByName(roomCfg.meshName);
+      assignMeta(
+        getTopLevelGroupChild(group, object),
+        { role: "room", floorMeshName: floorCfg.meshName, persistent: false },
+        9
+      );
+    });
+  });
+
+  group.children.forEach((child) => {
+    if (metaByUuid.has(child.uuid)) {
+      return;
+    }
+
+    const directFloorInfo = floorInfos.find((item) => item.mesh === child);
+    if (directFloorInfo) {
+      metaByUuid.set(child.uuid, {
+        role: "floor",
+        floorMeshName: directFloorInfo.floorMeshName,
+        persistent: false,
+      });
+      return;
+    }
+
+    const roomFloorName = roomFloorMap.get(child.uuid);
+    if (roomFloorName) {
+      metaByUuid.set(child.uuid, {
+        role: "room",
+        floorMeshName: roomFloorName,
+        persistent: false,
+      });
+      return;
+    }
+
+    const childBox = new THREE.Box3().setFromObject(child);
+    const childCenter = childBox.getCenter(new THREE.Vector3());
+    const childSize = childBox.getSize(new THREE.Vector3());
+    const spansBuilding = childSize.y >= buildingHeight * 0.6;
+
+    if (spansBuilding || floorInfos.length === 0) {
+      metaByUuid.set(child.uuid, {
+        role: "global",
+        floorMeshName: null,
+        persistent: false,
+      });
+      return;
+    }
+
+    let nearestFloor = null;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    floorInfos.forEach((floorInfo) => {
+      const distance = Math.abs(childCenter.y - floorInfo.centerY);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestFloor = floorInfo.floorMeshName;
+      }
+    });
+
+    metaByUuid.set(child.uuid, {
+      role: nearestFloor ? "decor" : "global",
+      floorMeshName: nearestFloor,
+      persistent: false,
+    });
+  });
+
+  return metaByUuid;
+}
+
+function setBuildingVisualState(st, mode = "overview", floorMeshName = null) {
+  if (!st?.group) return;
+
+  st.group.children.forEach((child) => {
+    const meta = st.childVisibilityMeta?.get(child.uuid);
+    if (!meta) {
+      child.visible = true;
+      return;
+    }
+
+    if (mode === "overview") {
+      child.visible = meta.role !== "room";
+      return;
+    }
+
+    if (mode === "building") {
+      if (meta.role === "room") {
+        child.visible = false;
+        return;
+      }
+
+      child.visible = !meta.persistent;
+      return;
+    }
+
+    if (mode === "floor") {
+      if (meta.role === "room") {
+        child.visible = false;
+        return;
+      }
+
+      if (meta.role === "floor") {
+        child.visible = meta.floorMeshName === floorMeshName;
+        return;
+      }
+
+      child.visible = !meta.persistent;
+    }
+  });
+}
+
 // ---------------- three init ----------------
 function initThree() {
   const container = document.getElementById("app") || document.body;
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x222222);
+  scene.background = new THREE.Color(designTokens.canvasBackdrop);
 
   camera = new THREE.PerspectiveCamera(
     50,
@@ -287,16 +644,19 @@ function initThree() {
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  if ("outputColorSpace" in renderer && THREE.SRGBColorSpace) {
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+  }
   container.appendChild(renderer.domElement);
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+  const hemi = new THREE.HemisphereLight(0xfaf1e5, 0x5c4c3c, 1.12);
   hemi.position.set(0, 10, 0);
   scene.add(hemi);
 
-  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  const dir = new THREE.DirectionalLight(0xfff6eb, 0.92);
   dir.position.set(-5, 10, 5);
   scene.add(dir);
 
@@ -426,7 +786,7 @@ function handleClickableClick(buildingKey, state, clickableParent) {
         // 1) Если есть массив panoramas — открываем последовательность
         if (Array.isArray(room.panoramas) && room.panoramas.length > 0) {
           // ожидаемый элемент массива: { id, url, title, hotspots, startYaw, startPitch }
-          panoOverlay.openSequence(room.panoramas, 0);
+          panoOverlay.openSequence(getLocalizedPanoramas(room.panoramas), 0);
         }
         // 2) Совместимость: если поле panorama — строка (URL)
         else if (typeof room.panorama === "string" && room.panorama.trim()) {
@@ -439,13 +799,13 @@ function handleClickableClick(buildingKey, state, clickableParent) {
           room.panorama.url
         ) {
           panoOverlay.openSequence(
-            [
+            getLocalizedPanoramas([
               {
                 id: room.panorama.id || "__single",
                 url: room.panorama.url,
                 ...room.panorama,
               },
-            ],
+            ]),
             0
           );
         }
@@ -520,9 +880,7 @@ function showFloorsForBuilding(buildingKey) {
   for (const [k, other] of buildingStates.entries()) {
     if (k === buildingKey) {
       other.group.visible = true;
-      other.group.children.forEach(
-        (ch) => (ch.visible = st.floorsMeshes.includes(ch))
-      );
+      setBuildingVisualState(other, "building");
       try {
         other.hitboxManager?.setLevel("floors");
       } catch {}
@@ -563,7 +921,7 @@ function showSingleFloorForBuilding(buildingKey, floorMeshName) {
   }
 
   // показываем только этот этаж в группе
-  st.group.children.forEach((ch) => (ch.visible = ch === floorMesh));
+  setBuildingVisualState(st, "floor", floorMeshName);
 
   // находим конфигурацию этажа и его комнаты (массы мешей)
   const floorCfg = (st.cfg.floors || []).find(
@@ -653,17 +1011,14 @@ function goToRoom(roomData) {
     other.group.visible = k === roomData.buildingKey;
   }
 
-  // Показываем только этот этаж
-  st.group.children.forEach((ch) => (ch.visible = false));
-  const floorMesh = st.group.getObjectByName(
-    // Ищем этаж, на котором находится кабинет
+  const selectedFloorMeshName =
     (st.cfg.floors || []).find((f) =>
       (f.rooms || []).some((r) => r.meshName === roomData.meshName)
-    )?.meshName || roomData.floorName
-  );
+    )?.meshName || roomData.floorMeshName || roomData.floorName;
+  const floorMesh = st.group.getObjectByName(selectedFloorMeshName);
 
   if (floorMesh) {
-    floorMesh.visible = true;
+    setBuildingVisualState(st, "floor", selectedFloorMeshName);
   }
 
   const floorCfg = (st.cfg.floors || []).find((f) =>
@@ -727,22 +1082,50 @@ function collectAllRooms() {
   const allRooms = [];
   for (const [buildingKey, st] of buildingStates.entries()) {
     const cfg = st.cfg;
-    const buildingName = cfg.name || buildingKey;
+    const buildingName = getLocalizedName(cfg, cfg.name || buildingKey);
+    const rawBuildingName = cfg.name || buildingKey;
 
     (cfg.floors || []).forEach((floorCfg) => {
       (floorCfg.rooms || []).forEach((roomCfg) => {
         const roomMesh = st.group.getObjectByName(roomCfg.meshName);
         if (roomMesh) {
+          const roomName = getLocalizedName(roomCfg, roomCfg.name || roomCfg.meshName);
+          const floorName = getLocalizedName(
+            floorCfg,
+            floorCfg.name || floorCfg.meshName
+          );
+          const description = getLocalizedDescription(
+            roomCfg,
+            roomCfg.description || ""
+          );
+
           allRooms.push({
-            name: roomCfg.name || roomCfg.meshName,
+            name: roomName,
+            originalName: roomCfg.name || roomCfg.meshName,
             buildingKey,
             buildingName,
-            floorName: floorCfg.name || floorCfg.meshName,
+            originalBuildingName: rawBuildingName,
+            floorName,
+            originalFloorName: floorCfg.name || floorCfg.meshName,
             floorMeshName: floorCfg.meshName,
             meshName: roomCfg.meshName,
             mesh: roomMesh,
             type: roomCfg.type || "other",
-            description: roomCfg.description || "",
+            description,
+            searchText: [
+              roomName,
+              roomCfg.name,
+              roomCfg.meshName,
+              floorName,
+              floorCfg.name,
+              buildingName,
+              rawBuildingName,
+              description,
+              roomCfg.description,
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase(),
           });
         }
       });
@@ -827,9 +1210,7 @@ function applyRoomFilter(config = {}) {
   }
 
   const filtered = allRooms.filter(
-    (r) =>
-      r.name.toLowerCase().includes(search) ||
-      r.meshName.toLowerCase().includes(search)
+    (r) => r.searchText.includes(search)
   );
 
   if (filtered.length === 0) {
@@ -1193,6 +1574,7 @@ function tintMaterialToMilky(material) {
 
 // ---------------- main init ----------------
 async function initApp() {
+  ensureDesignSystem();
   initThree();
 
   // инициализация тултипа
@@ -1203,6 +1585,16 @@ async function initApp() {
     container: document.body,
     onFilterChange: (config) => applyRoomFilter(config),
     onRoomClicked: (roomData) => goToRoom(roomData),
+  });
+
+  appHeader = new AppHeader({
+    container: document.body,
+    onSearch: () => roomFilter?.show?.(),
+    onToggleFilters: () => {
+      roomFilter?.togglePanel?.();
+      appHeader?.refresh?.();
+    },
+    isFilterOpen: () => roomFilter?.isPanelOpen?.() || false,
   });
 
   // debug manager — контролирует отображение визуальных хитбоксов
@@ -1218,7 +1610,7 @@ async function initApp() {
   window._panoOverlay = panoOverlay;
 
   // загружаем общую модель (all.glb / Untitled.glb / etc.)
-  const modelScene = await loadModelScene("/models/all_new.glb");
+  const modelScene = await loadModelScene("/models/all.glb");
   console.log("[DEBUG] modelScene loaded. Listing names:");
   modelScene.traverse((o) => {
     if ((o.isMesh || o.type === "Group") && o.name) console.log(o.type, o.name);
@@ -1269,8 +1661,11 @@ async function initApp() {
         }
         // Сохраняем информацию об этаже в userData
         m.userData = m.userData || {};
-        m.userData.name = f.name || `Этаж ${idx + 1}`;
-        m.userData.description = f.description || "";
+        m.userData.name = getLocalizedName(f, f.name || `Этаж ${idx + 1}`);
+        m.userData.description = getLocalizedDescription(
+          f,
+          f.description || ""
+        );
         floorsMeshes.push(m);
       } else {
         console.warn(
@@ -1294,8 +1689,11 @@ async function initApp() {
           }
           // Сохраняем информацию о кабинете в userData
           rm.userData = rm.userData || {};
-          rm.userData.name = r.name || r.meshName;
-          rm.userData.description = r.description || "";
+          rm.userData.name = getLocalizedName(r, r.name || r.meshName);
+          rm.userData.description = getLocalizedDescription(
+            r,
+            r.description || ""
+          );
           rm.visible = false;
           roomsMeshes.push(rm);
         }
@@ -1303,9 +1701,19 @@ async function initApp() {
     });
 
     // Сохраняем информацию о здании в userData группы
+    const configuredVisualMeshes = attachConfiguredVisualMeshes(
+      modelScene,
+      group,
+      cfg,
+      key
+    );
+
     group.userData = group.userData || {};
-    group.userData.name = cfg.name || key;
-    group.userData.description = cfg.description || "";
+    group.userData.name = getLocalizedName(cfg, cfg.name || key);
+    group.userData.description = getLocalizedDescription(
+      cfg,
+      cfg.description || ""
+    );
 
     // создаём HitboxManager для здания
     const manager = new HitboxManager(scene, camera, debugManager);
@@ -1328,7 +1736,11 @@ async function initApp() {
       console.warn("createBuildingHitbox failed:", e);
     }
     try {
-      manager.createFloorHitboxes(floorsMeshes);
+      const clickableFloorMeshes = (cfg.floors || [])
+        .filter((floorCfg) => floorCfg.clickable !== false)
+        .map((floorCfg) => group.getObjectByName(floorCfg.meshName))
+        .filter(Boolean);
+      manager.createFloorHitboxes(clickableFloorMeshes);
     } catch (e) {
       console.warn("createFloorHitboxes failed:", e);
     }
@@ -1336,6 +1748,7 @@ async function initApp() {
     // создаём хитбоксы комнат по этажам (под именем floor.meshName)
     for (const f of cfg.floors || []) {
       const roomsForFloor = (f.rooms || [])
+        .filter((roomCfg) => roomCfg.clickable !== false)
         .map((r) => group.getObjectByName(r.meshName))
         .filter(Boolean);
       if (roomsForFloor.length > 0) {
@@ -1362,11 +1775,22 @@ async function initApp() {
       }
     }
 
+    const floorRoomsMap = buildFloorRoomsMap(cfg, group);
+    const childVisibilityMeta = buildChildVisibilityMeta(
+      group,
+      cfg,
+      floorsMeshes,
+      floorRoomsMap
+    );
+
     buildingStates.set(key, {
       cfg,
       group,
       floorsMeshes,
       roomsMeshes,
+      configuredVisualMeshes,
+      floorRoomsMap,
+      childVisibilityMeta,
       hitboxManager: manager,
     });
 
@@ -1380,12 +1804,19 @@ async function initApp() {
     );
   }
 
+  updateLocalizedSceneMetadata();
+
+  subscribeLanguageChange(() => {
+    updateLocalizedSceneMetadata();
+    refreshInfoPanelForCurrentState();
+    applyRoomFilter(roomFilter?.getActiveFilters?.() || {});
+    tooltip?.hide?.();
+    updateStaticHintText();
+  });
+
   // InfoPanel (с кнопкой назад)
   const info = new InfoPanel({ container: document.body, onBack: goBack });
   window._infoPanel = info;
-
-  // Создаём кнопку открытия поиска кабинетов
-  createSearchButton();
 
   // удобные глобальные ссылки для отладки
   window._scene = scene;
@@ -1395,6 +1826,7 @@ async function initApp() {
   window.enableGlobalDebug && window.enableGlobalDebug(false);
   window._roomFilter = roomFilter;
 
+  updateStaticHintText();
   showAllBuildingsOverview();
 
   // render tweaks (опционально, для корректности отображения)
@@ -1470,23 +1902,25 @@ function createSearchButton() {
   const btn = document.createElement("button");
   btn.id = "room-search-btn";
   btn.textContent = "Поиск";
-  btn.style.cssText = `
-    position: fixed;
-    top: 80px;
-    right: 20px;
-    padding: 10px 16px;
-    background: rgb(58, 134, 255);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: bold;
-    z-index: 9998;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  `;
-  btn.onmouseover = () => (btn.style.background = "rgb(115, 167, 250)");
-  btn.onmouseout = () => (btn.style.background = "rgb(58, 134, 255)");
+  const baseStyles = {
+    ...buttonStyles("primary"),
+    position: "fixed",
+    top: "80px",
+    right: "20px",
+    zIndex: "9998",
+    minWidth: "118px",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    letterSpacing: "0.01em",
+  };
+  applyStyles(btn, baseStyles);
+  btn.onmouseover = () => {
+    btn.style.background = designTokens.accentHover;
+    btn.style.transform = "translateY(-1px)";
+  };
+  btn.onmouseout = () =>
+    applyStyles(btn, { ...baseStyles, transform: "translateY(0)" });
   btn.onclick = () => {
     if (roomFilter) roomFilter.show();
   };

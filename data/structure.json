@@ -4,17 +4,21 @@
       "name": "Главный корпус TTTU",
       "description": "Главный корпус унивреситета, 4 этажа",
       "meshName": "MainBuilding_Group",
+      "alwaysVisibleMeshes": ["Roof", "Text", "perexod"],
       "floors": [
         {
           "meshName": "Hfloor1",
           "name": "Этаж 1",
           "description": "Холл и кабинеты",
+          "clickable": true,
+          "displayMeshes": ["Hfloor1"],
           "rooms": [
             {
               "meshName": "kabinet1",
               "name": "Кабинет 101",
               "description": "Кафедра М",
               "type": "office",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -28,11 +32,14 @@
         {
           "meshName": "Hfloor2",
           "name": "Этаж 2",
+          "clickable": true,
+          "displayMeshes": ["Hfloor2"],
           "rooms": [
             {
               "meshName": "Kab_214",
               "name": "Кабинет 214",
               "description": "Кафедра М",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -46,6 +53,7 @@
               "meshName": "Kab_220",
               "name": "Кабинет 220",
               "description": "Кафедра М",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -71,6 +79,7 @@
               "meshName": "Kab_222",
               "name": "Кабинет 222",
               "description": "Кафедра М",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -84,11 +93,14 @@
         },
         { "meshName": "Hfloor3", 
           "name": "Этаж 3", 
+          "clickable": true,
+          "displayMeshes": ["Hfloor3"],
           "rooms": [
             {
               "meshName": "Kab_304",
               "name": "Кабинет 304",
               "description": "Кафедра М",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -102,6 +114,7 @@
               "meshName": "Kab_309",
               "name": "Кабинет 309",
               "description": "Кафедра М",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -115,6 +128,7 @@
               "meshName": "Kab_311",
               "name": "Кабинет 311",
               "description": "Кафедра М",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -128,6 +142,7 @@
               "meshName": "Kab_312",
               "name": "Кабинет 312",
               "description": "Кафедра М",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -139,7 +154,13 @@
             }
           ] 
         },
-        { "meshName": "Hfloor4", "name": "Этаж 4", "rooms": [] }
+        {
+          "meshName": "Hfloor4",
+          "name": "Этаж 4",
+          "clickable": true,
+          "displayMeshes": ["Hfloor4"],
+          "rooms": []
+        }
       ]
     },
 
@@ -147,17 +168,21 @@
       "name": "Новый корпус TTTU",
       "description": "Новый корпус университета и колледжа, 4 этажа",
       "meshName": "NewBuilding_Group",
+      "alwaysVisibleMeshes": ["Roof2", "Floor3"],
       "floors": [
         {
           "meshName": "N1floor",
           "name": "Этаж 1",
           "description": "Холл и кабинеты",
+          "clickable": true,
+          "displayMeshes": ["N1floor"],
           "rooms": [
             {
               "meshName": "Kab_101N",
               "name": "Кабинет 101",
               "description": "Кафедра М",
               "type": "office",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -172,6 +197,7 @@
               "name": "Кабинет 103",
               "description": "Кафедра",
               "type": "classroom",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -186,6 +212,7 @@
               "name": "Кабинет 110",
               "description": "Кафедра",
               "type": "office",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -200,6 +227,7 @@
               "name": "Кабинет 113",
               "description": "Кафедра",
               "type": "classroom",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -214,6 +242,7 @@
               "name": "Кабинет Инклюзивного образования",
               "description": "Кафедра",
               "type": "classroom",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -226,6 +255,7 @@
               "meshName": "Muzey",
               "name": "Музей университета",
               "type": "museum",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -269,11 +299,14 @@
         {
           "meshName": "N2floor",
           "name": "Этаж 2",
+          "clickable": true,
+          "displayMeshes": ["N2floor"],
           "rooms": [
             {
               "meshName": "Kab_221N",
               "name": "Кабинет 221",
               "description": "Лаборатория",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -287,6 +320,7 @@
               "meshName": "Kab_223N",
               "name": "Кабинет 223",
               "description": "Лаборатория",
+              "clickable": true,
               "panoramas": [
                 {
                   "id": "p1",
@@ -301,11 +335,14 @@
 
         { "meshName": "N3floor", 
         "name": "Этаж 3", 
+        "clickable": true,
+        "displayMeshes": ["N3floor"],
         "rooms": [
           {
             "meshName": "Kab_303N",
             "name": "Кабинет 303",
             "description": "Кафедра",
+            "clickable": true,
             "panoramas": [
               {
                 "id": "p1",
@@ -319,6 +356,7 @@
             "meshName": "Kab_305N",
             "name": "Кабинет 305",
             "description": "Кафедра",
+            "clickable": true,
             "panoramas": [
               {
                 "id": "p1",
@@ -332,6 +370,7 @@
             "meshName": "Kab_306N",
             "name": "Кабинет 306",
             "description": "Кафедра",
+            "clickable": true,
             "panoramas": [
               {
                 "id": "p1",
@@ -345,6 +384,7 @@
             "meshName": "Kab_307N",
             "name": "Кабинет 307",
             "description": "Кафедра",
+            "clickable": true,
             "panoramas": [
               {
                 "id": "p1",
@@ -358,6 +398,7 @@
             "meshName": "Kab_325BN",
             "name": "Кабинет 325",
             "description": "Кафедра",
+            "clickable": true,
             "panoramas": [
               {
                 "id": "p1",
@@ -369,7 +410,13 @@
           }
         ] 
       },
-        { "meshName": "N4floor", "name": "Этаж 4", "rooms": [] }
+        {
+          "meshName": "N4floor",
+          "name": "Этаж 4",
+          "clickable": true,
+          "displayMeshes": ["N4floor"],
+          "rooms": []
+        }
       ]
     },
 
@@ -377,16 +424,20 @@
       "name": "Общежитие TTTU",
       "description": "Здание общежития, 4 этажа",
       "meshName": "DormBuilding_Group",
+      "alwaysVisibleMeshes": ["Floor4"],
       "floors": [
         {
           "meshName": "O1floor",
           "name": "Этаж 1",
+          "clickable": true,
+          "displayMeshes": ["O1floor"],
           "rooms": [
             {
               "meshName": "kabinet1",
               "name": "Кабинет 101",
               "description": "Кафедра М",
               "type": "office",
+              "clickable": true,
               "panoramas": []
             },
             {
@@ -394,6 +445,7 @@
               "name": "Кабинет 102",
               "description": "Кафедра",
               "type": "office",
+              "clickable": true,
               "panoramas": []
             }
           ]
@@ -402,19 +454,34 @@
         {
           "meshName": "O2floor",
           "name": "Этаж 2",
+          "clickable": true,
+          "displayMeshes": ["O2floor"],
           "rooms": [
             {
               "meshName": "kabinet3",
               "name": "Холл 2 этажа",
               "description": "Лаборатория",
               "type": "laboratory",
+              "clickable": true,
               "panoramas": []
             }
           ]
         },
 
-        { "meshName": "O3floor", "name": "Этаж 3", "rooms": [] },
-        { "meshName": "O4floor", "name": "Этаж 4", "rooms": [] }
+        {
+          "meshName": "O3floor",
+          "name": "Этаж 3",
+          "clickable": true,
+          "displayMeshes": ["O3floor"],
+          "rooms": []
+        },
+        {
+          "meshName": "O4floor",
+          "name": "Этаж 4",
+          "clickable": true,
+          "displayMeshes": ["O4floor"],
+          "rooms": []
+        }
       ]
     }
   }

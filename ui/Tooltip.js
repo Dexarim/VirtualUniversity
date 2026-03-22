@@ -1,32 +1,37 @@
+import {
+  applyStyles,
+  designTokens,
+  ensureDesignSystem,
+  panelStyles,
+} from "./designSystem.js";
+import { t } from "./i18n.js";
+
 export class Tooltip {
   constructor() {
+    ensureDesignSystem();
+
     this.tooltip = document.createElement("div");
-    Object.assign(this.tooltip.style, {
+    applyStyles(this.tooltip, {
+      ...panelStyles({
+        padding: "10px 12px",
+        background: "rgba(255, 251, 245, 0.96)",
+      }),
       position: "fixed",
       pointerEvents: "none",
-      background: "rgba(0, 0, 0, 0.9)",
-      color: "#fff",
-      padding: "8px 12px",
-      borderRadius: "6px",
-      fontSize: "13px",
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      maxWidth: "300px",
+      maxWidth: "320px",
       zIndex: "10000",
       display: "none",
-      boxShadow: "0 4px 16px rgba(0, 0, 0, 0.6)",
-      border: "1px solid rgba(255, 255, 255, 0.15)",
-      backdropFilter: "blur(6px)",
       whiteSpace: "normal",
       wordWrap: "break-word",
-      animation: "tooltipFadeIn 0.2s ease-out",
+      borderRadius: "14px",
+      animation: "vtTooltipFade 0.18s ease-out",
     });
 
-    // Добавляем стили анимации
-    if (!document.getElementById("tooltipStyles")) {
+    if (!document.getElementById("vt-tooltip-styles")) {
       const style = document.createElement("style");
-      style.id = "tooltipStyles";
+      style.id = "vt-tooltip-styles";
       style.textContent = `
-        @keyframes tooltipFadeIn {
+        @keyframes vtTooltipFade {
           from {
             opacity: 0;
             transform: translateY(-4px);
@@ -43,53 +48,40 @@ export class Tooltip {
     document.body.appendChild(this.tooltip);
   }
 
-  /**
-   * Показать тултип
-   * @param {Object} data - { title, description } или просто { name, description }
-   * @param {number} x - позиция X мыши
-   * @param {number} y - позиция Y мыши
-   */
   show(data = {}, x = 0, y = 0) {
-    const title = data.title || data.name || "Объект";
+    const title = data.title || data.name || t("common_object");
     const description = data.description || "";
 
-    let content = `<strong>${this._escapeHtml(title)}</strong>`;
+    let content = `
+      <div style="font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:${designTokens.textMuted}; margin-bottom:4px;">
+        ${this._escapeHtml(t("tooltip_badge"))}
+      </div>
+      <strong style="display:block; font-size:14px; color:${designTokens.textPrimary};">${this._escapeHtml(
+        title
+      )}</strong>
+    `;
+
     if (description) {
-      content += `<br><span style="opacity: 0.85; font-size: 12px;">${this._escapeHtml(description)}</span>`;
+      content += `<span style="display:block; margin-top:4px; color:${designTokens.textSecondary}; font-size:12px; line-height:1.45;">${this._escapeHtml(
+        description
+      )}</span>`;
     }
 
     this.tooltip.innerHTML = content;
     this.tooltip.style.display = "block";
-
-    // Позиционируем тултип рядом с курсором (с отступом)
-    const offsetX = 12;
-    const offsetY = 12;
-    this.tooltip.style.left = `${x + offsetX}px`;
-    this.tooltip.style.top = `${y + offsetY}px`;
+    this.updatePosition(x, y);
   }
 
-  /**
-   * Скрыть тултип
-   */
   hide() {
     this.tooltip.style.display = "none";
   }
 
-  /**
-   * Обновить позицию тултипа (при движении мыши)
-   */
   updatePosition(x, y) {
-    if (this.tooltip.style.display === "block") {
-      const offsetX = 12;
-      const offsetY = 12;
-      this.tooltip.style.left = `${x + offsetX}px`;
-      this.tooltip.style.top = `${y + offsetY}px`;
-    }
+    if (this.tooltip.style.display !== "block") return;
+    this.tooltip.style.left = `${x + 14}px`;
+    this.tooltip.style.top = `${y + 14}px`;
   }
 
-  /**
-   * Экранировать HTML символы
-   */
   _escapeHtml(text) {
     const div = document.createElement("div");
     div.textContent = text;
