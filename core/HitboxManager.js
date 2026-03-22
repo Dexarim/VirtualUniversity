@@ -1,4 +1,3 @@
-// HitboxManager.js
 import { ClickableObject } from "./ClickableObject.js";
 
 export class HitboxManager {
@@ -9,49 +8,44 @@ export class HitboxManager {
     this.events = new EventTarget();
 
     this.hitboxes = {
-      building: null, // ClickableObject
-      floors: [], // ClickableObject[]
-      rooms: {}, // { floorName: ClickableObject[] }
+      building: null,
+      floors: [],
+      rooms: {},
     };
 
     this.level = "building";
     this._visibleRoomsForLevel = [];
   }
 
-  // Возвращает плоский массив всех ClickableObject для комнат
   _allRoomClickables() {
     const out = [];
-    const rooms = this.hitboxes.rooms || {};
-    // rooms is an object keyed by floorName -> array
-    for (const key of Object.keys(rooms)) {
-      const arr = rooms[key];
+    for (const key of Object.keys(this.hitboxes.rooms || {})) {
+      const arr = this.hitboxes.rooms[key];
       if (Array.isArray(arr)) out.push(...arr);
     }
     return out;
   }
 
-  // Скрытие всех визуальных хитбоксов (только showDebug(false))
   hideAllHitboxes() {
     if (this.hitboxes.building) this.hitboxes.building.showDebug(false);
     (this.hitboxes.floors || []).forEach((f) => f.showDebug(false));
     this._allRoomClickables().forEach((r) => r.showDebug(false));
   }
 
-  // Включить/выключить debug и синхронизировать показ в соответствии с текущим уровнем
   enableDebug(value) {
     const dbg = !!value;
     if (this.debug) this.debug.enabled = dbg;
-    // обновляем визуальное состояние (но не трогаем активность для raycast)
     this.setLevel(this.level, this._visibleRoomsForLevel);
   }
 
-  // Создание хитбокса для здания
   createBuildingHitbox(group) {
     const dbg = !!this.debug?.enabled;
     const clickable = new ClickableObject(group, this.camera, this.scene, {
       id: 0,
       name: "Building",
       parentObject: group,
+      kind: "building",
+      hitboxMode: "box",
       debugVisible: dbg,
     });
     clickable.updateHitbox(true);
@@ -59,7 +53,6 @@ export class HitboxManager {
     this.hitboxes.building = clickable;
   }
 
-  // Создание хитбоксов для этажей (массив мешей)
   createFloorHitboxes(floors) {
     const dbg = !!this.debug?.enabled;
     this.hitboxes.floors = (floors || []).filter(Boolean).map((mesh, i) => {
@@ -67,6 +60,8 @@ export class HitboxManager {
         id: i + 1,
         name: mesh.name || `Floor_${i + 1}`,
         parentObject: mesh,
+        kind: "floor",
+        hitboxMode: mesh?.isMesh ? "geometry" : "box",
         debugVisible: dbg,
       });
       clickable.updateHitbox(true);
@@ -75,77 +70,70 @@ export class HitboxManager {
     });
   }
 
-  // Создание хитбоксов для комнат (rooms — массив мешей), привязанных к floorName
   createRoomHitboxes(floorName, rooms) {
     if (!this.hitboxes.rooms) this.hitboxes.rooms = {};
     const dbg = !!this.debug?.enabled;
-    this.hitboxes.rooms[floorName] = (rooms || []).map((r, i) => {
-      const clickable = new ClickableObject(r, this.camera, this.scene, {
+    this.hitboxes.rooms[floorName] = (rooms || []).map((room, i) => {
+      const clickable = new ClickableObject(room, this.camera, this.scene, {
         id: i + 100,
-        name: r.name,
-        parentObject: r,
+        name: room.name,
+        parentObject: room,
+        kind: "room",
+        hitboxMode: "box",
         debugVisible: dbg,
       });
       clickable.updateHitbox(true);
-      // по умолчанию показываем/скрываем согласно debug
       clickable.showDebug(dbg && this.level === "rooms");
       return clickable;
     });
   }
 
-  // Установить уровень отображения: "building", "floors", "rooms", "none"
-  // visibleRooms — массив мешей (parentObject), которые должны быть активны/видимы при уровне "rooms"
   setLevel(level, visibleRooms = []) {
     this.level = level;
     this._visibleRoomsForLevel = visibleRooms || [];
 
-    // Всегда сбрасываем визуальные состояния
     this.hideAllHitboxes();
 
-    // Если debug выключен — мы не показываем визуальные хитбоксы, но сохраняем уровень
     if (!this.debug || !this.debug.enabled) {
-      // просто сохраняем уровень — активность для raycast будет по level
       return;
     }
 
-    // Если debug включён — показываем визуально в соответствии с уровнем
     if (level === "building") {
       if (this.hitboxes.building) this.hitboxes.building.showDebug(true);
-    } else if (level === "floors") {
+      return;
+    }
+
+    if (level === "floors") {
       (this.hitboxes.floors || []).forEach((f) => f.showDebug(true));
-    } else if (level === "rooms") {
-      const dbg = this.debug.enabled;
+      return;
+    }
+
+    if (level === "rooms") {
       const visibleSet = new Set(visibleRooms || []);
       for (const arr of Object.values(this.hitboxes.rooms || {})) {
-        for (const r of arr) {
-          const should = visibleSet.has(r.parentObject);
-          r.showDebug(dbg && should);
+        for (const roomClickable of arr) {
+          roomClickable.showDebug(this.debug.enabled && visibleSet.has(roomClickable.parentObject));
         }
       }
-    } else if (level === "none") {
-      // ничего не показываем
     }
   }
 
-  // Возвращает массив Mesh (hitbox meshes) активных хитбоксов для raycast
-  // ВАЖНО: теперь возвращаем hitbox meshes независимо от debug.enabled — визуальность отдельно.
   getActiveHitboxes() {
     if (this.level === "building") {
-      return this.hitboxes.building?.hitbox
-        ? [this.hitboxes.building.hitbox]
-        : [];
+      return this.hitboxes.building?.hitbox ? [this.hitboxes.building.hitbox] : [];
     }
+
     if (this.level === "floors") {
       return (this.hitboxes.floors || []).map((c) => c.hitbox).filter(Boolean);
     }
+
     if (this.level === "rooms") {
-      // ФИКС: возвращаем только хитбоксы видимых комнат (из _visibleRoomsForLevel)
       const visibleSet = new Set(this._visibleRoomsForLevel || []);
-      let all = [];
+      const all = [];
       for (const arr of Object.values(this.hitboxes.rooms || {})) {
-        for (const r of arr) {
-          if (visibleSet.has(r.parentObject)) {
-            all.push(r.hitbox);
+        for (const roomClickable of arr) {
+          if (visibleSet.has(roomClickable.parentObject)) {
+            all.push(roomClickable.hitbox);
           }
         }
       }
@@ -155,22 +143,20 @@ export class HitboxManager {
     return [];
   }
 
-  // Обновление хитбоксов (в animate loop)
   update() {
     this.hitboxes.building?.updateHitbox?.();
     (this.hitboxes.floors || []).forEach((f) => f.updateHitbox?.());
-    // обновляем все room clickables
     this._allRoomClickables().forEach((r) => r.updateHitbox?.());
   }
 
-  // Обработка клика — использует активные хитбоксы
   handleClick(raycaster) {
     const meshes = this.getActiveHitboxes();
     if (!meshes.length) return null;
+
     const intersects = raycaster.intersectObjects(meshes, true);
     if (!intersects.length) return null;
-    const hit = intersects[0].object;
 
+    const hit = intersects[0].object;
     const all = [
       ...(this.hitboxes.floors || []),
       ...this._allRoomClickables(),
@@ -180,18 +166,16 @@ export class HitboxManager {
     const clickable = all.find(
       (c) => c.hitbox === hit || c.hitbox?.children?.includes(hit)
     );
-    if (clickable) {
-      this.events.dispatchEvent(
-        new CustomEvent("objectClicked", {
-          detail: { parent: clickable.parentObject },
-        })
-      );
-      return clickable.parentObject;
-    }
-    return null;
+    if (!clickable) return null;
+
+    this.events.dispatchEvent(
+      new CustomEvent("objectClicked", {
+        detail: { parent: clickable.parentObject },
+      })
+    );
+    return clickable.parentObject;
   }
 
-  // Hover — ставим hover только на найденный хитбокс (и сбрасываем у остальных)
   handleHover(raycaster) {
     const meshes = this.getActiveHitboxes();
     if (!meshes.length) {
@@ -207,9 +191,11 @@ export class HitboxManager {
       ...this._allRoomClickables(),
       this.hitboxes.building,
     ].filter(Boolean);
+
     all.forEach((c) => c.setHover(false));
 
     if (!intersects.length) return null;
+
     const hit = intersects[0].object;
     const clickable = all.find(
       (c) => c.hitbox === hit || c.hitbox?.children?.includes(hit)
