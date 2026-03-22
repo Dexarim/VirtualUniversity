@@ -1,0 +1,48 @@
+{
+  "building": {
+    "name": "Главный корпус TTTU",
+    "description": "Главный корпус института, 4 этажа",
+    "meshName": "Building",
+    "floors": [
+      {
+        "meshName": "Plane",
+        "name": "Этаж 1",
+        "description": "Холл и кабинеты",
+        "rooms": [
+          {
+            "meshName": "kabinet1",
+            "name": "Кабинет 101",
+            "description": "Кафедра М"
+          },
+          {
+            "meshName": "kabinet2",
+            "name": "Кабинет 102",
+            "description": "Кафедра"
+          }
+        ]
+      },
+      {
+        "meshName": "plane2",
+        "name": "Этаж 2",
+        "rooms": [
+          {
+            "meshName": "kabinet3",
+            "name": "Холл 2 этажа",
+            "description": "Лаборатория"
+          }
+        ]
+      },
+      {
+        "meshName": "plane3",
+        "name": "Этаж 3",
+        "rooms": [
+          {
+            "meshName": "kabinet4",
+            "name": "Кабинет 301",
+            "description": "Аудитория"
+          }
+        ]
+      }
+    ]
+  }
+}

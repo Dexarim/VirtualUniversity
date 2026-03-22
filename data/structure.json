@@ -1,0 +1,421 @@
+{
+  "buildings": {
+    "main": {
+      "name": "Главный корпус TTTU",
+      "description": "Главный корпус унивреситета, 4 этажа",
+      "meshName": "MainBuilding_Group",
+      "floors": [
+        {
+          "meshName": "Hfloor1",
+          "name": "Этаж 1",
+          "description": "Холл и кабинеты",
+          "rooms": [
+            {
+              "meshName": "kabinet1",
+              "name": "Кабинет 101",
+              "description": "Кафедра М",
+              "type": "office",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "/panos/testcabinet.jpg",
+                  "title": "Основная панорама"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "meshName": "Hfloor2",
+          "name": "Этаж 2",
+          "rooms": [
+            {
+              "meshName": "Kab_214",
+              "name": "Кабинет 214",
+              "description": "Кафедра М",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "/panos/main_korpus/Kab_214.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            },
+            {
+              "meshName": "Kab_220",
+              "name": "Кабинет 220",
+              "description": "Кафедра М",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "/panos/main_korpus/Kab_220a.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere",
+                  "hotspots": [
+                    { "label": "Далее", "to": "p2", "u": 0.15, "v": 0.55 }
+                  ]
+                },
+                {
+                  "id": "p2",
+                  "url": "/panos/main_korpus/Kab_220b.jpg",
+                  "title": "Вторая панорама",
+                  "projection": "sphere",
+                  "hotspots": [
+                    { "label": "Далее", "to": "p1", "u": 0.15, "v": 0.55 }
+                  ]
+                }
+              ]
+            },
+            {
+              "meshName": "Kab_222",
+              "name": "Кабинет 222",
+              "description": "Кафедра М",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "/panos/main_korpus/Kab_222.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            }
+          ]
+        },
+        { "meshName": "Hfloor3", 
+          "name": "Этаж 3", 
+          "rooms": [
+            {
+              "meshName": "Kab_304",
+              "name": "Кабинет 304",
+              "description": "Кафедра М",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "/panos/main_korpus/Kab_304.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            },
+            {
+              "meshName": "Kab_309",
+              "name": "Кабинет 309",
+              "description": "Кафедра М",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "/panos/main_korpus/Kab_309.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            },
+            {
+              "meshName": "Kab_311",
+              "name": "Кабинет 311",
+              "description": "Кафедра М",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "/panos/main_korpus/Kab_311.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            },
+            {
+              "meshName": "Kab_312",
+              "name": "Кабинет 312",
+              "description": "Кафедра М",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "/panos/main_korpus/Kab_312.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            }
+          ] 
+        },
+        { "meshName": "Hfloor4", "name": "Этаж 4", "rooms": [] }
+      ]
+    },
+
+    "new": {
+      "name": "Новый корпус TTTU",
+      "description": "Новый корпус университета и колледжа, 4 этажа",
+      "meshName": "NewBuilding_Group",
+      "floors": [
+        {
+          "meshName": "N1floor",
+          "name": "Этаж 1",
+          "description": "Холл и кабинеты",
+          "rooms": [
+            {
+              "meshName": "Kab_101N",
+              "name": "Кабинет 101",
+              "description": "Кафедра М",
+              "type": "office",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "/panos/new_korpus/kab_101N.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            },
+            {
+              "meshName": "Kab_103N",
+              "name": "Кабинет 103",
+              "description": "Кафедра",
+              "type": "classroom",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "panos/new_korpus/Kab_103N.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            },
+            {
+              "meshName": "Kab_110N",
+              "name": "Кабинет 110",
+              "description": "Кафедра",
+              "type": "office",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "panos/new_korpus/Kab_110N.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            },
+            {
+              "meshName": "Kab_113N",
+              "name": "Кабинет 113",
+              "description": "Кафедра",
+              "type": "classroom",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "panos/new_korpus/Kab_113N.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            },
+            {
+              "meshName": "Kab_INKN",
+              "name": "Кабинет Инклюзивного образования",
+              "description": "Кафедра",
+              "type": "classroom",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "/panos/New/INKN.jpg",
+                  "title": "Основная панорама"
+                }
+              ]
+            },
+            {
+              "meshName": "Muzey",
+              "name": "Музей университета",
+              "type": "museum",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "title": "Зал 1",
+                  "description": "Вход в музей университета",
+                  "url": "panos/new_korpus/muzei_1.jpg",
+                  "hotspots": [
+                    { "label": "Далее", "to": "p2", "u": 0.0, "v": 0.55 }
+                  ]
+                },
+                {
+                  "id": "p2",
+                  "url": "panos/new_korpus/muzei_2.jpg",
+                  "hotspots": [
+                    { "label": "Далее", "to": "p3", "u": 0.15, "v": 0.55 },
+                    { "label": "Назад", "to": "p1", "u": 0.75, "v": 0.55 }
+                  ]
+                },
+                {
+                  "id": "p3",
+                  "url": "panos/new_korpus/muzei_3.jpg",
+                  "hotspots": [
+                    { "label": "Назад", "to": "p2", "u": 0.90, "v": 0.55 },
+                    { "label": "Далее", "to": "p4", "u": 0.10, "v": 0.55 }
+                  ]
+                },
+                {
+                  "id": "p4",
+                  "url": "panos/new_korpus/muzei_4.jpg",
+                  "hotspots": [
+                    { "label": "Назад", "to": "p3", "u": 0.25, "v": 0.55 },
+                    { "label": "К началу", "to": "p1", "u": 0.99, "v": 0.55 }
+                  ]
+                }
+              ]
+            }
+
+          ]
+        },
+
+        {
+          "meshName": "N2floor",
+          "name": "Этаж 2",
+          "rooms": [
+            {
+              "meshName": "Kab_221N",
+              "name": "Кабинет 221",
+              "description": "Лаборатория",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "panos/new_korpus/Kab_221N.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            },
+            {
+              "meshName": "Kab_223N",
+              "name": "Кабинет 223",
+              "description": "Лаборатория",
+              "panoramas": [
+                {
+                  "id": "p1",
+                  "url": "panos/new_korpus/Kab_223N.jpg",
+                  "title": "Основная панорама",
+                  "projection": "sphere"
+                }
+              ]
+            }
+          ]
+        },
+
+        { "meshName": "N3floor", 
+        "name": "Этаж 3", 
+        "rooms": [
+          {
+            "meshName": "Kab_303N",
+            "name": "Кабинет 303",
+            "description": "Кафедра",
+            "panoramas": [
+              {
+                "id": "p1",
+                "url": "panos/new_korpus/Kab_303N.jpg",
+                "title": "Основная панорама",
+                "projection": "sphere"
+              }
+            ]
+          },
+          {
+            "meshName": "Kab_305N",
+            "name": "Кабинет 305",
+            "description": "Кафедра",
+            "panoramas": [
+              {
+                "id": "p1",
+                "url": "panos/new_korpus/Kab_305N.jpg",
+                "title": "Основная панорама",
+                "projection": "sphere"
+              }
+            ]
+          },
+          {
+            "meshName": "Kab_306N",
+            "name": "Кабинет 306",
+            "description": "Кафедра",
+            "panoramas": [
+              {
+                "id": "p1",
+                "url": "panos/new_korpus/Kab_306N.jpg",
+                "title": "Основная панорама",
+                "projection": "sphere"
+              }
+            ]
+          },
+          {
+            "meshName": "Kab_307N",
+            "name": "Кабинет 307",
+            "description": "Кафедра",
+            "panoramas": [
+              {
+                "id": "p1",
+                "url": "panos/new_korpus/Kab_307N.jpg",
+                "title": "Основная панорама",
+                "projection": "sphere"
+              }
+            ]
+          },
+          {
+            "meshName": "Kab_325BN",
+            "name": "Кабинет 325",
+            "description": "Кафедра",
+            "panoramas": [
+              {
+                "id": "p1",
+                "url": "panos/new_korpus/Kab_325BN.jpg",
+                "title": "Основная панорама",
+                "projection": "sphere"
+              }
+            ]
+          }
+        ] 
+      },
+        { "meshName": "N4floor", "name": "Этаж 4", "rooms": [] }
+      ]
+    },
+
+    "Dorm": {
+      "name": "Общежитие TTTU",
+      "description": "Здание общежития, 4 этажа",
+      "meshName": "DormBuilding_Group",
+      "floors": [
+        {
+          "meshName": "O1floor",
+          "name": "Этаж 1",
+          "rooms": [
+            {
+              "meshName": "kabinet1",
+              "name": "Кабинет 101",
+              "description": "Кафедра М",
+              "type": "office",
+              "panoramas": []
+            },
+            {
+              "meshName": "kabinet2",
+              "name": "Кабинет 102",
+              "description": "Кафедра",
+              "type": "office",
+              "panoramas": []
+            }
+          ]
+        },
+
+        {
+          "meshName": "O2floor",
+          "name": "Этаж 2",
+          "rooms": [
+            {
+              "meshName": "kabinet3",
+              "name": "Холл 2 этажа",
+              "description": "Лаборатория",
+              "type": "laboratory",
+              "panoramas": []
+            }
+          ]
+        },
+
+        { "meshName": "O3floor", "name": "Этаж 3", "rooms": [] },
+        { "meshName": "O4floor", "name": "Этаж 4", "rooms": [] }
+      ]
+    }
+  }
+}

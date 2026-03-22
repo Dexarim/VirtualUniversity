@@ -1,0 +1,15 @@
+# Игнорируем виртуальное окружение
+node_modules/
+
+
+
+
+
+# Игнорируем IDE-шные файлы (VSCode
+.vscode/
+.idea/
+
+# Игнорируем DockerFile
+
+.dockerignore
+Dockerfile
