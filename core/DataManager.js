@@ -1,7 +1,10 @@
 // core/DataManager.js
 // DataManager — гибкий менеджер структуры зданий.
 // Поддерживает новый формат:
-// { "buildings": { "main": {...}, "new": {...}, ... } }
+// {
+//   "buildings": { "main": {...}, "new": {...}, ... },
+//   "sceneObjects": { "text": {...}, "roof": {...} }
+// }
 // А также старый (backward compatible): { "building": {...} }
 
 export class DataManager {
@@ -9,6 +12,7 @@ export class DataManager {
     this.url = url;
     this.data = null; // raw loaded JSON
     this._buildings = new Map(); // key -> cfg
+    this._sceneObjects = new Map(); // key -> cfg
   }
 
   // Загрузка JSON и нормализация в this._buildings
@@ -26,6 +30,12 @@ export class DataManager {
           Object.keys(this.data.buildings).forEach((key) => {
             const cfg = this.data.buildings[key];
             this._normalizeBuilding(cfg, key);
+          });
+        }
+        if (this.data.sceneObjects && typeof this.data.sceneObjects === "object") {
+          Object.keys(this.data.sceneObjects).forEach((key) => {
+            const cfg = this.data.sceneObjects[key];
+            this._normalizeSceneObject(cfg, key);
           });
         }
         // Старый формат: single building at "building"
@@ -70,7 +80,9 @@ export class DataManager {
 
       console.log(
         "[DataManager] JSON успешно загружен. Buildings:",
-        Array.from(this._buildings.keys())
+        Array.from(this._buildings.keys()),
+        "Scene objects:",
+        Array.from(this._sceneObjects.keys())
       );
       return this;
     } catch (err) {
@@ -111,9 +123,44 @@ export class DataManager {
     this._buildings.set(key, cfg);
   }
 
+  _normalizeSceneObject(rawCfg, key) {
+    if (!rawCfg || typeof rawCfg !== "object") return;
+
+    const displayMeshes = Array.isArray(rawCfg.displayMeshes)
+      ? rawCfg.displayMeshes.filter(Boolean)
+      : [];
+
+    const cfg = Object.assign(
+      {
+        name: rawCfg.name || key,
+        description: rawCfg.description || "",
+        meshName: rawCfg.meshName || rawCfg.name || key,
+        displayMeshes,
+        clickable: false,
+        visibleIn: Array.isArray(rawCfg.visibleIn) && rawCfg.visibleIn.length
+          ? rawCfg.visibleIn
+          : ["overview"],
+      },
+      rawCfg
+    );
+
+    if (!cfg.displayMeshes.includes(cfg.meshName)) {
+      cfg.displayMeshes.unshift(cfg.meshName);
+    }
+
+    this._sceneObjects.set(key, cfg);
+  }
+
   // Вернуть все здания в виде массива [{ key, cfg }, ...]
   getBuildings() {
     return Array.from(this._buildings.entries()).map(([key, cfg]) => ({
+      key,
+      cfg,
+    }));
+  }
+
+  getSceneObjects() {
+    return Array.from(this._sceneObjects.entries()).map(([key, cfg]) => ({
       key,
       cfg,
     }));

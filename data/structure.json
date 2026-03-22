@@ -4,7 +4,7 @@
       "name": "Главный корпус TTTU",
       "description": "Главный корпус унивреситета, 4 этажа",
       "meshName": "MainBuilding_Group",
-      "alwaysVisibleMeshes": ["Roof", "Text", "perexod"],
+      "supportiveMeshes": ["Roof"],
       "floors": [
         {
           "meshName": "Hfloor1",
@@ -168,7 +168,7 @@
       "name": "Новый корпус TTTU",
       "description": "Новый корпус университета и колледжа, 4 этажа",
       "meshName": "NewBuilding_Group",
-      "alwaysVisibleMeshes": ["Roof2", "Floor3"],
+      "supportiveMeshes": ["Roof2", "Floor3"],
       "floors": [
         {
           "meshName": "N1floor",
@@ -424,7 +424,7 @@
       "name": "Общежитие TTTU",
       "description": "Здание общежития, 4 этажа",
       "meshName": "DormBuilding_Group",
-      "alwaysVisibleMeshes": ["Floor4"],
+      "supportiveMeshes": ["Floor4"],
       "floors": [
         {
           "meshName": "O1floor",
@@ -483,6 +483,29 @@
           "rooms": []
         }
       ]
+    }
+  },
+  "sceneObjects": {
+    "perexod_mesh": {
+      "name": "Переход",
+      "description": "",
+      "meshName": "perexod",
+      "clickable": false,
+      "visibleIn": ["overview"]
+    },
+    "test_mesh": {
+      "name": "Тестовый объект",
+      "description": "",
+      "meshName": "Text",
+      "clickable": false,
+      "visibleIn": ["overview"]
+    },
+    "plane_mesh": {
+      "name": "мир",
+      "description": "",
+      "meshName": "Plane",
+      "clickable": false,
+      "visibleIn": ["overview"]
     }
   }
 }
