@@ -146,12 +146,14 @@ function goBack() {
   if (navStack.length <= 1) {
     navStack.length = 0;
     showAllBuildingsOverview();
+    refreshInfoPanelForCurrentState();
     return;
   }
   navStack.pop();
   const last = navStack[navStack.length - 1];
   if (!last) {
     showAllBuildingsOverview();
+    refreshInfoPanelForCurrentState();
     return;
   }
   switch (last.state) {
@@ -171,6 +173,7 @@ function goBack() {
       showAllBuildingsOverview();
       break;
   }
+  refreshInfoPanelForCurrentState();
 }
 
 // ---------------- camera helper ----------------
@@ -190,6 +193,81 @@ function safeSetCameraToBox(box, factor = 1.2) {
   );
   controls.target.copy(center);
   controls.update();
+}
+
+function buildInfoTitle(...parts) {
+  return parts
+    .map((part) => (typeof part === "string" ? part.trim() : ""))
+    .filter(Boolean)
+    .join(" - ");
+}
+
+function buildInfoMeta({ building = null, floor = null, room = null } = {}) {
+  return {
+    name: buildInfoTitle(building?.name, floor?.name, room?.name),
+    description:
+      room?.description || floor?.description || building?.description || "",
+    meshName: room?.meshName || floor?.meshName || building?.meshName || "",
+  };
+}
+
+function findFloorConfig(buildingCfg, floorMeshName) {
+  return (buildingCfg?.floors || []).find((floor) => floor.meshName === floorMeshName) || null;
+}
+
+function findRoomContext(buildingKey, roomMeshName) {
+  const st = buildingStates.get(buildingKey);
+  if (!st?.cfg) return null;
+
+  for (const floor of st.cfg.floors || []) {
+    const room = (floor.rooms || []).find((item) => item.meshName === roomMeshName);
+    if (room) {
+      return { building: st.cfg, floor, room };
+    }
+  }
+
+  return { building: st.cfg, floor: null, room: null };
+}
+
+function refreshInfoPanelForCurrentState() {
+  const infoPanel = window._infoPanel;
+  if (!infoPanel) return;
+
+  const entry = getCurrentNavEntry();
+  if (!entry || entry.state === "buildings_overview") {
+    infoPanel.hide?.();
+    return;
+  }
+
+  if (entry.state === "building_floors") {
+    const st = buildingStates.get(entry.meta.buildingKey);
+    if (st?.cfg) {
+      infoPanel.show(buildInfoMeta({ building: st.cfg }));
+      return;
+    }
+  }
+
+  if (entry.state === "building_floor") {
+    const st = buildingStates.get(entry.meta.buildingKey);
+    const floor = findFloorConfig(st?.cfg, entry.meta.floorMeshName);
+    if (st?.cfg) {
+      infoPanel.show(buildInfoMeta({ building: st.cfg, floor }));
+      return;
+    }
+  }
+
+  if (entry.state === "building_room") {
+    const roomContext = findRoomContext(
+      entry.meta.buildingKey,
+      entry.meta.roomMeshName
+    );
+    if (roomContext?.building) {
+      infoPanel.show(buildInfoMeta(roomContext));
+      return;
+    }
+  }
+
+  infoPanel.hide?.();
 }
 
 // ---------------- three init ----------------
@@ -336,7 +414,11 @@ function handleClickableClick(buildingKey, state, clickableParent) {
     const room = (f.rooms || []).find((r) => r.meshName === meshName);
     if (room) {
       // показываем панель с информацией (если есть)
-      if (window._infoPanel?.show) window._infoPanel.show(room);
+      if (window._infoPanel?.show) {
+        window._infoPanel.show(
+          buildInfoMeta({ building: cfg, floor: f, room })
+        );
+      }
 
       // Открываем панораму (поддерживаем несколько форматов)
       const panoOverlay = window._panoOverlay;
@@ -426,6 +508,7 @@ function showAllBuildingsOverview() {
   safeSetCameraToBox(box, CAMERA_SETTINGS.overviewFactor);
 
   syncRoomHighlightsWithCurrentState();
+  refreshInfoPanelForCurrentState();
 }
 
 function showFloorsForBuilding(buildingKey) {
@@ -454,13 +537,16 @@ function showFloorsForBuilding(buildingKey) {
     }
   }
 
-  if (window._infoPanel?.show) window._infoPanel.show(st.cfg);
+  if (window._infoPanel?.show) {
+    window._infoPanel.show(buildInfoMeta({ building: st.cfg }));
+  }
   pushNav("building_floors", { buildingKey });
   safeSetCameraToBox(
     new THREE.Box3().setFromObject(st.group),
     CAMERA_SETTINGS.buildingFactor
   );
   syncRoomHighlightsWithCurrentState();
+  refreshInfoPanelForCurrentState();
 }
 
 // Показать этаж и подготовить комнаты
@@ -537,13 +623,18 @@ function showSingleFloorForBuilding(buildingKey, floorMeshName) {
     console.warn("Ошибка при конфигурировании room-hitboxes:", e);
   }
 
-  if (window._infoPanel?.show) window._infoPanel.show(floorCfg || st.cfg);
+  if (window._infoPanel?.show) {
+    window._infoPanel.show(
+      buildInfoMeta({ building: st.cfg, floor: floorCfg || null })
+    );
+  }
   pushNav("building_floor", { buildingKey, floorMeshName });
   safeSetCameraToBox(
     new THREE.Box3().setFromObject(floorMesh),
     CAMERA_SETTINGS.floorFactor
   );
   syncRoomHighlightsWithCurrentState();
+  refreshInfoPanelForCurrentState();
 }
 
 // =============== RoomFilter Functions ===============
@@ -575,6 +666,25 @@ function goToRoom(roomData) {
     floorMesh.visible = true;
   }
 
+  const floorCfg = (st.cfg.floors || []).find((f) =>
+    (f.rooms || []).some((r) => r.meshName === roomData.meshName)
+  );
+  const roomCfg =
+    floorCfg?.rooms?.find((r) => r.meshName === roomData.meshName) || roomData;
+
+  if (window._infoPanel?.show) {
+    window._infoPanel.show(
+      buildInfoMeta({
+        building: st.cfg,
+        floor: floorCfg || {
+          name: roomData.floorName,
+          meshName: roomData.floorName,
+        },
+        room: roomCfg,
+      })
+    );
+  }
+
   // Показываем только эту комнату
   st.roomsMeshes?.forEach?.((m) => {
     if (m) m.visible = false;
@@ -595,12 +705,18 @@ function goToRoom(roomData) {
   if (roomFilter) roomFilter.hide();
 
   // Обновляем навигацию
+  navStack = navStack.filter((entry) => entry.state === "buildings_overview");
+  if (navStack.length === 0) {
+    navStack.push({ state: "buildings_overview", meta: {} });
+  }
+
   pushNav("building_room", {
     buildingKey: roomData.buildingKey,
     roomMeshName: roomData.meshName,
   });
 
   syncRoomHighlightsWithCurrentState(roomData.meshName);
+  refreshInfoPanelForCurrentState();
 
   if (roomData.mesh) {
     startRoomBreathing(roomData.mesh);
