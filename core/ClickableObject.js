@@ -6,7 +6,9 @@ const DEFAULTS = {
   hoverColor: 0xffa500,
   baseOpacity: 0.25,
   hoverOpacity: 0.4,
-  debugVisible: false, // ← от HitboxManager приходит true/false
+  debugVisible: false,
+  hitboxMode: "box",
+  kind: "generic",
 };
 
 export class ClickableObject {
@@ -15,11 +17,12 @@ export class ClickableObject {
     this.camera = camera;
     this.scene = scene;
 
+    this.opts = { ...DEFAULTS, ...(options || {}) };
+
     this.id = options.id ?? 0;
     this.name = options.name ?? mesh.name ?? "Unnamed";
     this.parentObject = options.parentObject ?? mesh;
-
-    this.opts = { ...DEFAULTS, ...(options || {}) };
+    this.kind = this.opts.kind;
 
     this.isHovered = false;
     this.visible = true;
@@ -27,15 +30,26 @@ export class ClickableObject {
     this._lastMatrixWorld = new THREE.Matrix4();
 
     this._hitbox = null;
-
-    // Материал и геометрия
     this._material = new THREE.MeshBasicMaterial({
       color: this.opts.baseColor,
       transparent: true,
       opacity: this.opts.baseOpacity,
       depthWrite: false,
+      side: THREE.DoubleSide,
     });
-    this._geometry = new THREE.BoxGeometry(1, 1, 1);
+    this._geometry = this._createHitboxGeometry();
+  }
+
+  _createHitboxGeometry() {
+    if (
+      this.opts.hitboxMode === "geometry" &&
+      this.mesh?.isMesh &&
+      this.mesh.geometry
+    ) {
+      return this.mesh.geometry.clone();
+    }
+
+    return new THREE.BoxGeometry(1, 1, 1);
   }
 
   _ensureHitbox() {
@@ -44,8 +58,7 @@ export class ClickableObject {
     this._hitbox = new THREE.Mesh(this._geometry, this._material);
     this._hitbox.name = `hitbox_${this.name}_${this.id}`;
     this._hitbox.userData.parentObject = this.parentObject;
-
-    // Хитбокс виден только если debugVisible = true
+    this._hitbox.userData.kind = this.kind;
     this._hitbox.visible = !!this.opts.debugVisible;
 
     this.hitbox = this._hitbox;
@@ -54,7 +67,6 @@ export class ClickableObject {
     this.updateHitbox(true);
   }
 
-  // Public helper — обеспечивает создание хитбокса, не меняя флагов видимости debug.
   ensureHitbox() {
     this._ensureHitbox();
   }
@@ -65,9 +77,22 @@ export class ClickableObject {
 
   updateHitbox(force = false) {
     this._ensureHitbox();
+
     const currentMatrix = this.mesh.matrixWorld;
-    if (!force && !this._dirty && currentMatrix.equals(this._lastMatrixWorld))
+    if (!force && !this._dirty && currentMatrix.equals(this._lastMatrixWorld)) {
       return;
+    }
+
+    if (this.opts.hitboxMode === "geometry") {
+      currentMatrix.decompose(
+        this._hitbox.position,
+        this._hitbox.quaternion,
+        this._hitbox.scale
+      );
+      this._lastMatrixWorld.copy(currentMatrix);
+      this._dirty = false;
+      return;
+    }
 
     const box = new THREE.Box3().setFromObject(this.mesh);
     const size = new THREE.Vector3();
@@ -75,10 +100,9 @@ export class ClickableObject {
     box.getSize(size);
     box.getCenter(center);
 
-    const pad = this.opts.padding;
-    size.addScalar(pad);
-
+    size.addScalar(this.opts.padding);
     this._hitbox.position.copy(center);
+    this._hitbox.quaternion.identity();
     this._hitbox.scale.copy(size);
 
     this._lastMatrixWorld.copy(currentMatrix);
@@ -89,8 +113,7 @@ export class ClickableObject {
     if (this.isHovered === state) return;
     this.isHovered = state;
     if (!this._hitbox) return;
-    // Only apply visual hover styling when debug visuals are enabled.
-    // This prevents hover from making hitboxes visible in normal (non-debug) mode.
+
     if (this.opts.debugVisible) {
       this._material.color.set(state ? this.opts.hoverColor : this.opts.baseColor);
       this._material.opacity = state ? this.opts.hoverOpacity : this.opts.baseOpacity;
@@ -116,11 +139,13 @@ export class ClickableObject {
   dispose() {
     if (this._hitbox) {
       this.scene.remove(this._hitbox);
+      this._hitbox.geometry?.dispose?.();
       this._hitbox.geometry = null;
       this._hitbox.material = null;
       this._hitbox = null;
       this.hitbox = null;
     }
+
     if (this._material) {
       this._material.dispose();
       this._material = null;

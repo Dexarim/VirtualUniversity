@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Three.js — Кликабельные корпуса</title>
+    <style>
+      body { margin: 0; overflow: hidden; background: #111; }
+      canvas { display: block; }
+      #fidget {
+        position: absolute;
+        top: 50%;
+        right: 20px;
+        transform: translateY(-50%) scale(0);
+        background: rgba(255, 255, 255, 0.9);
+        color: #111;
+        font-family: sans-serif;
+        padding: 15px 25px;
+        border-radius: 12px;
+        box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+        text-align: center;
+        transition: transform 0.3s ease;
+        transform-origin: right center;
+      }
+      #fidget.active {
+        transform: translateY(-50%) scale(1);
+      }
+      .info-panel button:hover {
+      transform: scale(1.05);
+  }
+    </style>
+    <script type="module" crossorigin src="/assets/index-CSm_NuCK.js"></script>
+  </head>
+  <body>
+    <div id="fidget">👋 Наведи курсор на объект!</div>
+  </body>
+</html>
