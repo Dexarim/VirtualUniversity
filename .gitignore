@@ -1,7 +1,7 @@
 # Игнорируем виртуальное окружение
 node_modules/
 dist/
-models/
+models/all_*.glb
 Test/
 
 
