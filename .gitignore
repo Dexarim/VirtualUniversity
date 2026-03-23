@@ -2,7 +2,7 @@
 node_modules/
 dist/
 models/
-
+Test/
 
 
 # Игнорируем IDE-шные файлы (VSCode
