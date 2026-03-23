@@ -5,12 +5,19 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { HitboxManager } from "./core/HitboxManager.js";
 import { DebugManager } from "./core/DebugManager.js";
 import { DataManager } from "./core/DataManager.js";
+import { installDebugConsole } from "./core/DebugConsole.js";
+import {
+  createPerformanceController,
+  optimizeStaticModelScene,
+} from "./core/ScenePerformance.js";
+import { RoomRegistry } from "./core/RoomRegistry.js";
 
 import { InfoPanel } from "./ui/InfoPanel.js";
 import { PanoramaOverlay } from "./ui/PanoramaOverlay.js";
 import { Tooltip } from "./ui/Tooltip.js";
 import { RoomFilter } from "./ui/RoomFilter.js";
 import { AppHeader } from "./ui/AppHeader.js";
+import { LoadingOverlay } from "./ui/LoadingOverlay.js";
 import {
   designTokens,
   ensureDesignSystem,
@@ -29,6 +36,11 @@ let scene, camera, renderer, controls;
 let debugManager, dataManager;
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+let debugConsole = null;
+let performanceController = null;
+let roomRegistry = null;
+let animationFrameId = 0;
+let renderFramesRemaining = 0;
 
 // Тултип для объектов
 let tooltip = null;
@@ -49,6 +61,7 @@ let navStack = [];
 // Панорамный оверлей
 let panoOverlay = null;
 let appHeader = null;
+let loadingOverlay = null;
 
 // ---------------- camera configuration ----------------
 const CAMERA_SETTINGS = {
@@ -200,7 +213,7 @@ function setHoverPulseState(clickable, active) {
       kind: clickable.kind,
       tintTargets:
         clickable.kind === "building"
-          ? collectHoverTintTargets(targetObject, Number.POSITIVE_INFINITY)
+          ? collectHoverTintTargets(targetObject, 3)
           : clickable.kind === "floor"
             ? collectHoverTintTargets(targetObject, 2)
             : [],
@@ -244,6 +257,22 @@ function resetHoverState() {
   lastHoveredObject?.setHover?.(false);
   lastHoveredObject = null;
   tooltip?.hide();
+}
+
+function requestRender(frames = 2) {
+  renderFramesRemaining = Math.max(renderFramesRemaining, frames);
+  if (!animationFrameId) {
+    animationFrameId = requestAnimationFrame(animate);
+  }
+}
+
+function shouldKeepRendering() {
+  return (
+    renderFramesRemaining > 0 ||
+    hoverPulseStates.size > 0 ||
+    breathingRoomStates.size > 0 ||
+    !!debugConsole?.isFpsEnabled?.()
+  );
 }
 
 function goBack() {
@@ -697,9 +726,16 @@ function initThree() {
   );
   camera.position.set(2, 2, 2);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer = new THREE.WebGLRenderer({
+    antialias: false,
+    powerPreference: "high-performance",
+  });
+  performanceController = createPerformanceController({
+    renderer,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    devicePixelRatio: window.devicePixelRatio || 1,
+  });
   if ("outputColorSpace" in renderer && THREE.SRGBColorSpace) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
   }
@@ -707,6 +743,10 @@ function initThree() {
 
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
+  controls.enabled = false;
+  controls.addEventListener("start", () => requestRender(120));
+  controls.addEventListener("change", () => requestRender(12));
+  controls.addEventListener("end", () => requestRender(30));
 
   const hemi = new THREE.HemisphereLight(0xfaf1e5, 0x5c4c3c, 1.12);
   hemi.position.set(0, 10, 0);
@@ -719,7 +759,8 @@ function initThree() {
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    performanceController?.resize?.(window.innerWidth, window.innerHeight);
+    requestRender(8);
   });
 
   // делегируем pointer события всем HitboxManager-ам
@@ -769,6 +810,8 @@ function initThree() {
       // Обновляем позицию тултипа при движении мыши над одним объектом
       tooltip.updatePosition(mouseX, mouseY);
     }
+
+    requestRender(2);
   });
 
   renderer.domElement.addEventListener("pointerleave", () => {
@@ -777,6 +820,7 @@ function initThree() {
     lastHoveredObject?.setHover?.(false);
     tooltip?.hide();
     lastHoveredObject = null;
+    requestRender(2);
   });
 
   renderer.domElement.addEventListener("pointerdown", (e) => {
@@ -790,6 +834,7 @@ function initThree() {
         const clicked = st.hitboxManager?.handleClick(raycaster);
         if (clicked) {
           handleClickableClick(key, st, clicked);
+          requestRender(12);
           break;
         }
       } catch (err) {}
@@ -798,10 +843,17 @@ function initThree() {
 }
 
 // ---------------- model loader ----------------
-async function loadModelScene(url) {
+async function loadModelScene(url, onProgress = null) {
   const loader = new GLTFLoader();
   return await new Promise((res, rej) =>
-    loader.load(url, (g) => res(g.scene), undefined, rej)
+    loader.load(
+      url,
+      (g) => res(g.scene),
+      (event) => {
+        onProgress && onProgress(event);
+      },
+      rej
+    )
   );
 }
 
@@ -931,6 +983,7 @@ function showAllBuildingsOverview() {
 
   syncRoomHighlightsWithCurrentState();
   refreshInfoPanelForCurrentState();
+  requestRender(12);
 }
 
 function showFloorsForBuilding(buildingKey) {
@@ -968,6 +1021,7 @@ function showFloorsForBuilding(buildingKey) {
   );
   syncRoomHighlightsWithCurrentState();
   refreshInfoPanelForCurrentState();
+  requestRender(12);
 }
 
 // Показать этаж и подготовить комнаты
@@ -1057,6 +1111,7 @@ function showSingleFloorForBuilding(buildingKey, floorMeshName) {
   );
   syncRoomHighlightsWithCurrentState();
   refreshInfoPanelForCurrentState();
+  requestRender(12);
 }
 
 // =============== RoomFilter Functions ===============
@@ -1141,88 +1196,16 @@ function goToRoom(roomData) {
   if (roomData.mesh) {
     startRoomBreathing(roomData.mesh);
   }
+  requestRender(18);
 }
 
 function collectAllRooms() {
-  const allRooms = [];
-  for (const [buildingKey, st] of buildingStates.entries()) {
-    const cfg = st.cfg;
-    const buildingName = getLocalizedName(cfg, cfg.name || buildingKey);
-    const rawBuildingName = cfg.name || buildingKey;
-
-    (cfg.floors || []).forEach((floorCfg) => {
-      (floorCfg.rooms || []).forEach((roomCfg) => {
-        const roomMesh = st.group.getObjectByName(roomCfg.meshName);
-        if (roomMesh) {
-          const roomName = getLocalizedName(roomCfg, roomCfg.name || roomCfg.meshName);
-          const floorName = getLocalizedName(
-            floorCfg,
-            floorCfg.name || floorCfg.meshName
-          );
-          const description = getLocalizedDescription(
-            roomCfg,
-            roomCfg.description || ""
-          );
-
-          allRooms.push({
-            name: roomName,
-            originalName: roomCfg.name || roomCfg.meshName,
-            buildingKey,
-            buildingName,
-            originalBuildingName: rawBuildingName,
-            floorName,
-            originalFloorName: floorCfg.name || floorCfg.meshName,
-            floorMeshName: floorCfg.meshName,
-            meshName: roomCfg.meshName,
-            mesh: roomMesh,
-            type: roomCfg.type || "other",
-            description,
-            searchText: [
-              roomName,
-              roomCfg.name,
-              roomCfg.meshName,
-              floorName,
-              floorCfg.name,
-              buildingName,
-              rawBuildingName,
-              description,
-              roomCfg.description,
-            ]
-              .filter(Boolean)
-              .join(" ")
-              .toLowerCase(),
-          });
-        }
-      });
-    });
-  }
-
-  return allRooms;
+  return roomRegistry?.getAllRooms?.() || [];
 }
 
 function getRoomsForCurrentState() {
   const entry = getCurrentNavEntry();
-  const allRooms = collectAllRooms();
-  if (!entry) return [];
-
-  switch (entry.state) {
-    case "buildings_overview":
-      return allRooms;
-    case "building_floor":
-      return allRooms.filter(
-        (room) =>
-          room.buildingKey === entry.meta.buildingKey &&
-          room.floorMeshName === entry.meta.floorMeshName
-      );
-    case "building_room":
-      return allRooms.filter(
-        (room) =>
-          room.buildingKey === entry.meta.buildingKey &&
-          room.meshName === entry.meta.roomMeshName
-      );
-    default:
-      return [];
-  }
+  return roomRegistry?.getRoomsForNavEntry?.(entry) || [];
 }
 
 function syncRoomHighlightsWithCurrentState(forceRoomMeshName = null) {
@@ -1266,17 +1249,14 @@ function syncRoomHighlightsWithCurrentState(forceRoomMeshName = null) {
 function applyRoomFilter(config = {}) {
   const search = (config?.search || "").trim().toLowerCase();
   syncRoomHighlightsWithCurrentState();
-
-  const allRooms = collectAllRooms();
+  requestRender(12);
 
   if (!search) {
     roomFilter?.resetSearchResults();
     return;
   }
 
-  const filtered = allRooms.filter(
-    (r) => r.searchText.includes(search)
-  );
+  const filtered = roomRegistry?.search?.(search) || [];
 
   if (filtered.length === 0) {
     if (roomFilter) roomFilter.updateSearchResults([]);
@@ -1410,7 +1390,6 @@ function updateHighlightedMaterialAppearance(material, opacity, emissiveIntensit
     if (mat.emissiveIntensity !== undefined) {
       mat.emissiveIntensity = emissiveIntensity;
     }
-    mat.needsUpdate = true;
   };
 
   if (Array.isArray(material)) {
@@ -1493,7 +1472,6 @@ function setMeshCollectionTintBlend(targets, fromColor, toColor, blend, state = 
     const setMaterialColor = (material) => {
       if (!material?.color?.lerpColors) return;
       material.color.lerpColors(fromColor, toColor, blend);
-      material.needsUpdate = true;
     };
 
     if (Array.isArray(mesh.material)) {
@@ -1640,6 +1618,13 @@ function tintMaterialToMilky(material) {
 // ---------------- main init ----------------
 async function initApp() {
   ensureDesignSystem();
+  loadingOverlay = new LoadingOverlay({ container: document.body });
+  loadingOverlay.show({
+    title: "Загрузка сцены",
+    status: "Подготавливаем движок и интерфейс...",
+    progress: 0.02,
+    label: "Инициализация",
+  });
   initThree();
 
   // инициализация тултипа
@@ -1668,6 +1653,8 @@ async function initApp() {
 
   // dataManager загружает /data/structure.json (в нём — описание зданий/этажей/кабинетов)
   dataManager = new DataManager("/data/structure.json");
+  loadingOverlay.setStatus("Загружаем структуру корпусов...");
+  loadingOverlay.setProgress(0.08, "Структура");
   await dataManager.load();
 
   // инициализация панорамы (любой UI-оверлей, у тебя должен быть PanoramaOverlay.js)
@@ -1675,7 +1662,26 @@ async function initApp() {
   window._panoOverlay = panoOverlay;
 
   // загружаем общую модель (all.glb / Untitled.glb / etc.)
-  const modelScene = await loadModelScene("/models/all.glb");
+  loadingOverlay.setStatus("Загружаем 3D-модель корпуса...");
+  loadingOverlay.setProgress(0.12, "3D модель");
+  const modelScene = await loadModelScene("/models/all.glb", (event) => {
+    if (!loadingOverlay) return;
+
+    const hasTotal = Number.isFinite(event?.total) && event.total > 0;
+    if (!hasTotal) {
+      loadingOverlay.setStatus("Получаем данные модели...");
+      return;
+    }
+
+    const modelProgress = event.loaded / event.total;
+    const normalized = 0.12 + Math.max(0, Math.min(1, modelProgress)) * 0.72;
+    loadingOverlay.setStatus(
+      `Загружаем 3D-модель корпуса... ${Math.round(modelProgress * 100)}%`
+    );
+    loadingOverlay.setProgress(normalized, "3D модель");
+  });
+  loadingOverlay.setStatus("Собираем сцену и связываем объекты...");
+  loadingOverlay.setProgress(0.86, "Сборка сцены");
   console.log("[DEBUG] modelScene loaded. Listing names:");
   modelScene.traverse((o) => {
     if ((o.isMesh || o.type === "Group") && o.name) console.log(o.type, o.name);
@@ -1901,9 +1907,18 @@ async function initApp() {
   }
 
   updateLocalizedSceneMetadata();
+  roomRegistry = new RoomRegistry({
+    buildingStates,
+    getLocalizedName,
+    getLocalizedDescription,
+  });
+  roomRegistry.rebuild();
+  loadingOverlay.setStatus("Настраиваем интерфейс и навигацию...");
+  loadingOverlay.setProgress(0.93, "Интерфейс");
 
   subscribeLanguageChange(() => {
     updateLocalizedSceneMetadata();
+    roomRegistry?.rebuild?.();
     refreshInfoPanelForCurrentState();
     applyRoomFilter(roomFilter?.getActiveFilters?.() || {});
     tooltip?.hide?.();
@@ -1918,80 +1933,63 @@ async function initApp() {
   window._scene = scene;
   window._buildingStates = buildingStates;
   window._debugManager = debugManager;
-  // Гарантированно выключаем глобальный debug (на всякий случай)
-  window.enableGlobalDebug && window.enableGlobalDebug(false);
   window._roomFilter = roomFilter;
+  debugConsole = installDebugConsole({
+    container: document.body,
+    debugManager,
+    buildingStates,
+    cameraSettings: CAMERA_SETTINGS,
+    performanceController,
+  });
+  debugConsole.commands.Hitbox.disable();
 
   updateStaticHintText();
   showAllBuildingsOverview();
+  loadingOverlay.setStatus("Финализируем сцену...");
+  loadingOverlay.setProgress(0.97, "Финализация");
 
   // render tweaks (опционально, для корректности отображения)
-  modelScene.traverse((obj) => {
-    if (!obj.isMesh) return;
-    try {
-      if (!obj.userData._originalMaterial)
-        obj.userData._originalMaterial = obj.material;
-      if (obj.material) {
-        tintMaterialToMilky(obj.material);
-        obj.material.side = THREE.DoubleSide;
-        obj.material.transparent = false;
-        obj.material.polygonOffset = true;
-        obj.material.polygonOffsetFactor = 1;
-        obj.material.polygonOffsetUnits = 1;
-        obj.material.needsUpdate = true;
-      }
-    } catch (e) {}
-    obj.frustumCulled = false;
-    try {
-      const g = obj.geometry;
-      if (g && typeof g.computeVertexNormals === "function") {
-        g.computeVertexNormals();
-        if (g.attributes.normal) g.attributes.normal.needsUpdate = true;
-      }
-    } catch (e) {}
+  optimizeStaticModelScene(modelScene, {
+    onMaterial: (material) => {
+      tintMaterialToMilky(material);
+      material.transparent = false;
+    },
   });
 
-  animate();
+  loadingOverlay.setStatus("Готово. Передаём управление...");
+  loadingOverlay.setProgress(1, "Готово");
+  controls.enabled = true;
+  loadingOverlay.hide();
+  requestRender(18);
 }
 
 // ---------------- render loop ----------------
 function animate() {
-  requestAnimationFrame(animate);
+  animationFrameId = 0;
   const time = performance.now();
-  controls.update();
-  for (const st of buildingStates.values()) {
-    try {
-      st.hitboxManager?.update();
-    } catch (e) {}
+  if (controls.enabled) {
+    controls.update();
   }
   animateHoverPulses(time);
   animateBreathingRooms(time);
+  performanceController?.update?.(time);
+  debugConsole?.update?.(time);
   renderer.render(scene, camera);
+
+  renderFramesRemaining = Math.max(0, renderFramesRemaining - 1);
+  if (shouldKeepRendering()) {
+    requestRender(0);
+  }
 }
 
 // ---------------- start ----------------
 window.addEventListener("DOMContentLoaded", () => {
   initApp().catch((err) => {
     console.error("🔥 FULL initApp error:", err);
+    loadingOverlay?.fail?.(err?.message || String(err));
     alert("Ошибка инициализации:\n" + (err?.message || err));
   });
 });
-
-// ---------------- helpers для отладки ----------------
-window.setCameraFactor = function (obj = {}) {
-  Object.assign(CAMERA_SETTINGS, obj);
-  console.log("CAMERA_SETTINGS updated:", CAMERA_SETTINGS);
-};
-
-window.enableGlobalDebug = function (v) {
-  debugManager && debugManager.set && debugManager.set(!!v);
-  for (const st of buildingStates.values()) {
-    st.hitboxManager &&
-      st.hitboxManager.enableDebug &&
-      st.hitboxManager.enableDebug(!!v);
-  }
-  console.log("Debug:", !!v);
-};
 
 // =============== Search Button Helper ===============
 function createSearchButton() {

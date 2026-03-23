@@ -1,5 +1,6 @@
 // ui/PanoramaOverlay.js
 import * as THREE from "three";
+import { getRecommendedPixelRatio } from "../core/ScenePerformance.js";
 import { InfoPanel } from "./InfoPanel.js";
 import {
   applyStyles,
@@ -468,10 +469,11 @@ export class PanoramaOverlay {
 
     const renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
+      antialias: false,
       alpha: false,
+      powerPreference: "high-performance",
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(getRecommendedPixelRatio(window.devicePixelRatio || 1, 1));
     console.log(
       "[PanoramaOverlay] Renderer initialized, pixelRatio:",
       renderer.getPixelRatio()
