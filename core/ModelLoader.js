@@ -1,8 +1,12 @@
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 
 export class ModelLoader {
   constructor() {
     this.loader = new GLTFLoader();
+    this.dracoLoader = new DRACOLoader();
+    this.dracoLoader.setDecoderPath("/draco/gltf/");
+    this.loader.setDRACOLoader(this.dracoLoader);
     this.cache = new Map(); // url -> Promise<gltf>
   }
 

@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 
 import { HitboxManager } from "./core/HitboxManager.js";
 import { DebugManager } from "./core/DebugManager.js";
@@ -844,15 +845,25 @@ function initThree() {
 
 // ---------------- model loader ----------------
 async function loadModelScene(url, onProgress = null) {
+  const dracoLoader = new DRACOLoader();
+  dracoLoader.setDecoderPath("/draco/gltf/");
+
   const loader = new GLTFLoader();
+  loader.setDRACOLoader(dracoLoader);
   return await new Promise((res, rej) =>
     loader.load(
       url,
-      (g) => res(g.scene),
+      (g) => {
+        dracoLoader.dispose();
+        res(g.scene);
+      },
       (event) => {
         onProgress && onProgress(event);
       },
-      rej
+      (error) => {
+        dracoLoader.dispose();
+        rej(error);
+      }
     )
   );
 }
