@@ -1,4 +1,4 @@
-import * as THREE from "three";
+﻿import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
@@ -1992,35 +1992,7 @@ window.addEventListener("DOMContentLoaded", () => {
   });
 });
 
-// =============== Search Button Helper ===============
-function createSearchButton() {
-  const btn = document.createElement("button");
-  btn.id = "room-search-btn";
-  btn.textContent = "Поиск";
-  const baseStyles = {
-    ...buttonStyles("primary"),
-    position: "fixed",
-    top: "80px",
-    right: "20px",
-    zIndex: "9998",
-    minWidth: "118px",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    letterSpacing: "0.01em",
-  };
-  applyStyles(btn, baseStyles);
-  btn.onmouseover = () => {
-    btn.style.background = designTokens.accentHover;
-    btn.style.transform = "translateY(-1px)";
-  };
-  btn.onmouseout = () =>
-    applyStyles(btn, { ...baseStyles, transform: "translateY(0)" });
-  btn.onclick = () => {
-    if (roomFilter) roomFilter.show();
-  };
-  document.body.appendChild(btn);
-}
+
 
 export {}; // модульный файл
 
