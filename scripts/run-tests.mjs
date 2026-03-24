@@ -2,7 +2,7 @@ import { readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const ROOT = process.cwd();
-const SEARCH_DIRS = ["tests", "test", "Test"];
+const SEARCH_DIRS = ["tests"];
 const TEST_FILE_RE = /\.(test|spec)\.(c|m)?js$/i;
 
 function walk(dirPath, acc = []) {
@@ -50,8 +50,8 @@ if (shouldList) {
 }
 
 if (!uniqueFiles.length) {
-  console.log("No runnable .test.js/.spec.js files found in tests/, test/, or Test/.");
-  console.log("Legacy files in Test/ are kept as references and are not executable Node tests yet.");
+  console.log("No runnable .test.js/.spec.js files found in tests/.");
+  console.log("Legacy fixtures can stay in tests/legacy/, but only runnable test files are executed.");
   process.exit(0);
 }
 

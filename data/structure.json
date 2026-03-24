@@ -22,7 +22,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "/panos/testcabinet.jpg",
+                  "url": "/data/Panorams/testcabinet.jpg",
                   "title": "Основная панорама"
                 }
               ]
@@ -43,7 +43,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "/panos/main_korpus/Kab_214.jpg",
+                  "url": "/data/Panorams/main_korpus/Kab_214.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -57,7 +57,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "/panos/main_korpus/Kab_220a.jpg",
+                  "url": "/data/Panorams/main_korpus/Kab_220a.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere",
                   "hotspots": [
@@ -66,7 +66,7 @@
                 },
                 {
                   "id": "p2",
-                  "url": "/panos/main_korpus/Kab_220b.jpg",
+                  "url": "/data/Panorams/main_korpus/Kab_220b.jpg",
                   "title": "Вторая панорама",
                   "projection": "sphere",
                   "hotspots": [
@@ -83,7 +83,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "/panos/main_korpus/Kab_222.jpg",
+                  "url": "/data/Panorams/main_korpus/Kab_222.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -104,7 +104,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "/panos/main_korpus/Kab_304.jpg",
+                  "url": "/data/Panorams/main_korpus/Kab_304.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -118,7 +118,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "/panos/main_korpus/Kab_309.jpg",
+                  "url": "/data/Panorams/main_korpus/Kab_309.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -132,7 +132,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "/panos/main_korpus/Kab_311.jpg",
+                  "url": "/data/Panorams/main_korpus/Kab_311.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -146,7 +146,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "/panos/main_korpus/Kab_312.jpg",
+                  "url": "/data/Panorams/main_korpus/Kab_312.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -186,7 +186,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "/panos/new_korpus/kab_101N.jpg",
+                  "url": "/data/Panorams/new_korpus/kab_101N.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -201,7 +201,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "panos/new_korpus/Kab_103N.jpg",
+                  "url": "/data/Panorams/new_korpus/Kab_103N.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -216,7 +216,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "panos/new_korpus/Kab_110N.jpg",
+                  "url": "/data/Panorams/new_korpus/Kab_110N.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -231,7 +231,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "panos/new_korpus/Kab_113N.jpg",
+                  "url": "/data/Panorams/new_korpus/Kab_113N.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -246,7 +246,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "/panos/New/INKN.jpg",
+                  "url": "/data/Panorams/New/INKN.jpg",
                   "title": "Основная панорама"
                 }
               ]
@@ -261,14 +261,14 @@
                   "id": "p1",
                   "title": "Зал 1",
                   "description": "Вход в музей университета",
-                  "url": "panos/new_korpus/muzei_1.jpg",
+                  "url": "/data/Panorams/new_korpus/muzei_1.jpg",
                   "hotspots": [
                     { "label": "Далее", "to": "p2", "u": 0.0, "v": 0.55 }
                   ]
                 },
                 {
                   "id": "p2",
-                  "url": "panos/new_korpus/muzei_2.jpg",
+                  "url": "/data/Panorams/new_korpus/muzei_2.jpg",
                   "hotspots": [
                     { "label": "Далее", "to": "p3", "u": 0.15, "v": 0.55 },
                     { "label": "Назад", "to": "p1", "u": 0.75, "v": 0.55 }
@@ -276,7 +276,7 @@
                 },
                 {
                   "id": "p3",
-                  "url": "panos/new_korpus/muzei_3.jpg",
+                  "url": "/data/Panorams/new_korpus/muzei_3.jpg",
                   "hotspots": [
                     { "label": "Назад", "to": "p2", "u": 0.90, "v": 0.55 },
                     { "label": "Далее", "to": "p4", "u": 0.10, "v": 0.55 }
@@ -284,7 +284,7 @@
                 },
                 {
                   "id": "p4",
-                  "url": "panos/new_korpus/muzei_4.jpg",
+                  "url": "/data/Panorams/new_korpus/muzei_4.jpg",
                   "hotspots": [
                     { "label": "Назад", "to": "p3", "u": 0.25, "v": 0.55 },
                     { "label": "К началу", "to": "p1", "u": 0.99, "v": 0.55 }
@@ -310,7 +310,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "panos/new_korpus/Kab_221N.jpg",
+                  "url": "/data/Panorams/new_korpus/Kab_221N.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -324,7 +324,7 @@
               "panoramas": [
                 {
                   "id": "p1",
-                  "url": "panos/new_korpus/Kab_223N.jpg",
+                  "url": "/data/Panorams/new_korpus/Kab_223N.jpg",
                   "title": "Основная панорама",
                   "projection": "sphere"
                 }
@@ -346,7 +346,7 @@
             "panoramas": [
               {
                 "id": "p1",
-                "url": "panos/new_korpus/Kab_303N.jpg",
+                "url": "/data/Panorams/new_korpus/Kab_303N.jpg",
                 "title": "Основная панорама",
                 "projection": "sphere"
               }
@@ -360,7 +360,7 @@
             "panoramas": [
               {
                 "id": "p1",
-                "url": "panos/new_korpus/Kab_305N.jpg",
+                "url": "/data/Panorams/new_korpus/Kab_305N.jpg",
                 "title": "Основная панорама",
                 "projection": "sphere"
               }
@@ -374,7 +374,7 @@
             "panoramas": [
               {
                 "id": "p1",
-                "url": "panos/new_korpus/Kab_306N.jpg",
+                "url": "/data/Panorams/new_korpus/Kab_306N.jpg",
                 "title": "Основная панорама",
                 "projection": "sphere"
               }
@@ -388,7 +388,7 @@
             "panoramas": [
               {
                 "id": "p1",
-                "url": "panos/new_korpus/Kab_307N.jpg",
+                "url": "/data/Panorams/new_korpus/Kab_307N.jpg",
                 "title": "Основная панорама",
                 "projection": "sphere"
               }
@@ -402,7 +402,7 @@
             "panoramas": [
               {
                 "id": "p1",
-                "url": "panos/new_korpus/Kab_325BN.jpg",
+                "url": "/data/Panorams/new_korpus/Kab_325BN.jpg",
                 "title": "Основная панорама",
                 "projection": "sphere"
               }

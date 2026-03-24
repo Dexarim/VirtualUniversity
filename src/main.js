@@ -1799,17 +1799,7 @@ async function initApp() {
 
     // создаём HitboxManager для здания
     const manager = new HitboxManager(scene, camera, debugManager);
-    if (manager.events?.addEventListener) {
-      manager.events.addEventListener("objectClicked", (e) => {
-        const parent = e.detail?.parent;
-        if (!parent) return;
-        handleClickableClick(
-          key,
-          { cfg, group, floorsMeshes, roomsMeshes, hitboxManager: manager },
-          parent
-        );
-      });
-    }
+
 
     // регистрируем хитбоксы
     try {
@@ -2033,3 +2023,4 @@ function createSearchButton() {
 }
 
 export {}; // модульный файл
+

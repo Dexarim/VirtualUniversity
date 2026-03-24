@@ -400,8 +400,16 @@ export class PanoramaOverlay {
     this._unbindKeyboard();
 
     if (this.three) {
-      const { renderer, scene, mesh, listeners, runningRef } = this.three;
-      runningRef && runningRef(false);
+      const {
+        renderer,
+        scene,
+        mesh,
+        floorDisk,
+        ceilingDisk,
+        listeners,
+        _runningFlagRef,
+      } = this.three;
+      _runningFlagRef && _runningFlagRef(false);
 
       try {
         if (listeners) {
@@ -426,6 +434,16 @@ export class PanoramaOverlay {
             mesh.material.dispose();
           }
           scene.remove(mesh);
+        }
+        if (floorDisk) {
+          if (floorDisk.geometry) floorDisk.geometry.dispose();
+          if (floorDisk.material) floorDisk.material.dispose();
+          scene.remove(floorDisk);
+        }
+        if (ceilingDisk) {
+          if (ceilingDisk.geometry) ceilingDisk.geometry.dispose();
+          if (ceilingDisk.material) ceilingDisk.material.dispose();
+          scene.remove(ceilingDisk);
         }
       } catch (e) {}
 
@@ -965,3 +983,4 @@ export class PanoramaOverlay {
     });
   }
 }
+

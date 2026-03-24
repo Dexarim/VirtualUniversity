@@ -113,25 +113,25 @@ main.js    точка входа приложения
 
 ## Основные файлы
 
-- [main.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/main.js)  
+- [src/main.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/src/main.js)  
   Основной orchestration-файл: инициализация сцены, загрузка модели, навигация, фильтры, рендер-цикл.
 
 - [data/structure.json](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/data/structure.json)  
   Главный конфиг корпусов, этажей, комнат и панорам.
 
-- [core/DataManager.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/core/DataManager.js)  
+- [src/core/DataManager.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/src/core/DataManager.js)  
   Нормализация и чтение структуры данных.
 
-- [core/HitboxManager.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/core/HitboxManager.js)  
+- [src/core/HitboxManager.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/src/core/HitboxManager.js)  
   Хитбоксы зданий, этажей и комнат.
 
-- [core/DebugConsole.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/core/DebugConsole.js)  
+- [src/core/DebugConsole.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/src/core/DebugConsole.js)  
   Консольные debug-команды.
 
-- [ui/PanoramaOverlay.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/ui/PanoramaOverlay.js)  
+- [src/ui/PanoramaOverlay.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/src/ui/PanoramaOverlay.js)  
   Просмотр панорам.
 
-- [ui/LoadingOverlay.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/ui/LoadingOverlay.js)  
+- [src/ui/LoadingOverlay.js](/c:/Document/GitHubProject/tttu.edu.kz/VirtualTursNodeJS/src/ui/LoadingOverlay.js)  
   Экран загрузки сцены.
 
 ## Формат данных
@@ -238,3 +238,4 @@ npm run test:all
 ## Лицензия
 
 `ISC`
+
