@@ -1629,12 +1629,18 @@ function tintMaterialToMilky(material) {
 // ---------------- main init ----------------
 async function initApp() {
   ensureDesignSystem();
-  loadingOverlay = new LoadingOverlay({ container: document.body });
+  loadingOverlay = new LoadingOverlay({
+    container: document.body,
+    onProceed: () => {
+      controls.enabled = true;
+      requestRender(30);
+    },
+  });
   loadingOverlay.show({
-    title: "Загрузка сцены",
-    status: "Подготавливаем движок и интерфейс...",
+    title: t("app_title"),
+    status: t("loading_status_preparing"),
     progress: 0.02,
-    label: "Инициализация",
+    label: t("loading_stage_init"),
   });
   initThree();
 
@@ -1655,6 +1661,11 @@ async function initApp() {
       roomFilter?.togglePanel?.();
       appHeader?.refresh?.();
     },
+    onShowControls: () => {
+      if (!loadingOverlay) return;
+      controls.enabled = false;
+      loadingOverlay.showControlsMenu();
+    },
     isFilterOpen: () => roomFilter?.isPanelOpen?.() || false,
   });
 
@@ -1664,8 +1675,8 @@ async function initApp() {
 
   // dataManager загружает /data/structure.json (в нём — описание зданий/этажей/кабинетов)
   dataManager = new DataManager("/data/structure.json");
-  loadingOverlay.setStatus("Загружаем структуру корпусов...");
-  loadingOverlay.setProgress(0.08, "Структура");
+  loadingOverlay.setStatus(t("loading_status_structure"));
+  loadingOverlay.setProgress(0.08, t("loading_stage_structure"));
   await dataManager.load();
 
   // инициализация панорамы (любой UI-оверлей, у тебя должен быть PanoramaOverlay.js)
@@ -1673,26 +1684,26 @@ async function initApp() {
   window._panoOverlay = panoOverlay;
 
   // загружаем общую модель (all.glb / Untitled.glb / etc.)
-  loadingOverlay.setStatus("Загружаем 3D-модель корпуса...");
-  loadingOverlay.setProgress(0.12, "3D модель");
+  loadingOverlay.setStatus(t("loading_status_model_loading"));
+  loadingOverlay.setProgress(0.12, t("loading_stage_model"));
   const modelScene = await loadModelScene("/models/all.glb", (event) => {
     if (!loadingOverlay) return;
 
     const hasTotal = Number.isFinite(event?.total) && event.total > 0;
     if (!hasTotal) {
-      loadingOverlay.setStatus("Получаем данные модели...");
+      loadingOverlay.setStatus(t("loading_status_model_data"));
       return;
     }
 
     const modelProgress = event.loaded / event.total;
     const normalized = 0.12 + Math.max(0, Math.min(1, modelProgress)) * 0.72;
     loadingOverlay.setStatus(
-      `Загружаем 3D-модель корпуса... ${Math.round(modelProgress * 100)}%`
+      `${t("loading_status_model_loading")} ${Math.round(modelProgress * 100)}%`
     );
-    loadingOverlay.setProgress(normalized, "3D модель");
+    loadingOverlay.setProgress(normalized, t("loading_stage_model"));
   });
-  loadingOverlay.setStatus("Собираем сцену и связываем объекты...");
-  loadingOverlay.setProgress(0.86, "Сборка сцены");
+  loadingOverlay.setStatus(t("loading_status_assembling"));
+  loadingOverlay.setProgress(0.86, t("loading_stage_assembly"));
   console.log("[DEBUG] modelScene loaded. Listing names:");
   modelScene.traverse((o) => {
     if ((o.isMesh || o.type === "Group") && o.name) console.log(o.type, o.name);
@@ -1914,8 +1925,8 @@ async function initApp() {
     getLocalizedDescription,
   });
   roomRegistry.rebuild();
-  loadingOverlay.setStatus("Настраиваем интерфейс и навигацию...");
-  loadingOverlay.setProgress(0.93, "Интерфейс");
+  loadingOverlay.setStatus(t("loading_status_interface"));
+  loadingOverlay.setProgress(0.93, t("loading_stage_interface"));
 
   subscribeLanguageChange(() => {
     updateLocalizedSceneMetadata();
@@ -1946,8 +1957,8 @@ async function initApp() {
 
   updateStaticHintText();
   showAllBuildingsOverview();
-  loadingOverlay.setStatus("Финализируем сцену...");
-  loadingOverlay.setProgress(0.97, "Финализация");
+  loadingOverlay.setStatus(t("loading_status_finalizing"));
+  loadingOverlay.setProgress(0.97, t("loading_stage_finalizing"));
 
   // render tweaks (опционально, для корректности отображения)
   optimizeStaticModelScene(modelScene, {
@@ -1957,10 +1968,8 @@ async function initApp() {
     },
   });
 
-  loadingOverlay.setStatus("Готово. Передаём управление...");
-  loadingOverlay.setProgress(1, "Готово");
-  controls.enabled = true;
-  loadingOverlay.hide();
+  loadingOverlay.setStatus(t("loading_status_ready"));
+  loadingOverlay.setProgress(1, t("loading_stage_ready"));
   requestRender(18);
 }
 
