@@ -8,13 +8,16 @@ import {
   titleStyles,
   tagStyles,
 } from "./designSystem.js";
-import { t } from "./i18n.js";
+import { t, subscribeLanguageChange } from "./i18n.js";
 
 export class LoadingOverlay {
   constructor({ container = document.body, onProceed = null } = {}) {
     ensureDesignSystem();
 
     this.onProceed = onProceed;
+    this.viewMode = "loading"; // "loading" or "controls"
+    this.controlItems = [];
+    this.hintItems = [];
 
     this.root = document.createElement("div");
     applyStyles(this.root, {
@@ -58,7 +61,8 @@ export class LoadingOverlay {
     });
 
     this.badge = document.createElement("div");
-    this.badge.textContent = "TTTU Virtual Tour";
+    this._initialBadgeText = "TTTU Virtual Tour";
+    this.badge.textContent = this._initialBadgeText;
     applyStyles(this.badge, {
       display: "inline-flex",
       alignSelf: "flex-start",
@@ -115,7 +119,7 @@ export class LoadingOverlay {
     });
 
     this.progressLabel = document.createElement("span");
-    this.progressLabel.textContent = "Loading Assets";
+    this.progressLabel.textContent = t("loading_status_preparing");
 
     this.progressValue = document.createElement("span");
     this.progressValue.textContent = "0%";
@@ -191,9 +195,9 @@ export class LoadingOverlay {
       border: "1px solid rgba(157, 107, 53, 0.08)",
     });
 
-    const controlsTitle = document.createElement("div");
-    controlsTitle.textContent = t("loading_controls_title");
-    applyStyles(controlsTitle, {
+    this.controlsTitle = document.createElement("div");
+    this.controlsTitle.textContent = t("loading_controls_title");
+    applyStyles(this.controlsTitle, {
       fontSize: "11px",
       fontWeight: "800",
       color: designTokens.textMuted,
@@ -201,7 +205,7 @@ export class LoadingOverlay {
       letterSpacing: "0.1em",
       marginBottom: "4px",
     });
-    controlsContainer.appendChild(controlsTitle);
+    controlsContainer.appendChild(this.controlsTitle);
 
     const controlsList = document.createElement("div");
     applyStyles(controlsList, {
@@ -242,6 +246,7 @@ export class LoadingOverlay {
 
       const title = document.createElement("div");
       title.textContent = t(titleKey);
+      title._translationKey = titleKey;
       applyStyles(title, {
         fontSize: "16px",
         fontWeight: "800",
@@ -250,6 +255,7 @@ export class LoadingOverlay {
 
       const desc = document.createElement("div");
       desc.textContent = t(descKey);
+      desc._translationKey = descKey;
       applyStyles(desc, {
         fontSize: "13px",
         lineHeight: "1.5",
@@ -258,6 +264,7 @@ export class LoadingOverlay {
 
       textSection.appendChild(title);
       textSection.appendChild(desc);
+      this.controlItems.push({ title, desc });
       item.appendChild(iconBox);
       item.appendChild(textSection);
       return item;
@@ -313,6 +320,8 @@ export class LoadingOverlay {
 
       const text = document.createElement("span");
       text.textContent = t(hint.key);
+      text._translationKey = hint.key;
+      this.hintItems.push(text);
 
       row.appendChild(icon);
       row.appendChild(text);
@@ -323,6 +332,35 @@ export class LoadingOverlay {
 
     this.root.appendChild(this.panel);
     container.appendChild(this.root);
+
+    this._unsubscribeLanguage = subscribeLanguageChange(() => {
+      this.applyLanguage();
+    });
+  }
+
+  applyLanguage() {
+    this.title.textContent = t("app_title");
+    // status and progressLabel are dynamic, but we can refresh them if they match known keys
+    // however, they are usually updated by the main loop.
+    // Fixed parts:
+    this.controlsTitle.textContent = t("loading_controls_title");
+    
+    this.controlItems.forEach(item => {
+      item.title.textContent = t(item.title._translationKey);
+      item.desc.textContent = t(item.desc._translationKey);
+    });
+
+    this.hintItems.forEach(item => {
+      item.textContent = t(item._translationKey);
+    });
+
+    if (this.viewMode === "controls") {
+      this.proceedBtn.textContent = t("common_close");
+    } else {
+      // In loading mode, if progress is finished (100%), it says "Proceed"
+      // If it's still loading, it might be hidden, but we should update it anyway
+      this.proceedBtn.textContent = t("loading_proceed_btn");
+    }
   }
 
   _getMouseIcon(type) {
@@ -388,6 +426,7 @@ export class LoadingOverlay {
   }
 
   showControlsMenu() {
+    this.viewMode = "controls";
     this.header.style.display = "none";
     this.progressSection.style.display = "none";
     this.proceedBtn.style.display = "block";
@@ -400,6 +439,7 @@ export class LoadingOverlay {
   }
 
   show({ title, status, progress = 0, label } = {}) {
+    this.viewMode = "loading";
     this.header.style.display = "flex";
     this.progressSection.style.display = "flex";
     
@@ -433,6 +473,7 @@ export class LoadingOverlay {
         this.proceedBtn.textContent = t("loading_proceed_btn");
       }
     } else {
+      this.viewMode = "loading";
       // Show progress bar and hide Proceed Button
       if (this.progressSection.style.display === "none") {
         this.progressSection.style.display = "flex";
