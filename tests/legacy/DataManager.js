@@ -1,6 +1,5 @@
 // core/DataManager.js
 // Утилита для загрузки, редактирования и экспорта структуры здания (JSON).
-// Поддерживает иерархию: building → floors → rooms
 
 export class DataManager {
   constructor(url = "/data/structure.json") {
