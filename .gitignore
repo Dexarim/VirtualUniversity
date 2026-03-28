@@ -2,7 +2,7 @@
 node_modules/
 dist/
 models/all_*.glb
-Tests/legacy/
+tests/legacy/
 
 
 # Игнорируем IDE-шные файлы (VSCode
