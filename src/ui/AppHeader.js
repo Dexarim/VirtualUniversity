@@ -20,12 +20,14 @@ export class AppHeader {
     container = document.body,
     onSearch = () => {},
     onToggleFilters = () => {},
+    onShowControls = () => {},
     isFilterOpen = () => false,
   } = {}) {
     ensureDesignSystem();
 
     this.onSearch = onSearch;
     this.onToggleFilters = onToggleFilters;
+    this.onShowControls = onShowControls;
     this.isFilterOpen = isFilterOpen;
 
     this.root = document.createElement("div");
@@ -83,6 +85,12 @@ export class AppHeader {
     this.searchButton.onclick = () => this.onSearch();
     this._wireButtonHover(this.searchButton, "primary");
     this.controls.appendChild(this.searchButton);
+
+    this.controlsButton = document.createElement("button");
+    applyStyles(this.controlsButton, buttonStyles("secondary"));
+    this.controlsButton.onclick = () => this.onShowControls();
+    this._wireButtonHover(this.controlsButton, "secondary");
+    this.controls.appendChild(this.controlsButton);
 
     this.filterButton = document.createElement("button");
     applyStyles(this.filterButton, buttonStyles("secondary"));
@@ -143,6 +151,7 @@ export class AppHeader {
     this.title.textContent = t("app_title");
     this.subtitle.textContent = t("app_subtitle");
     this.searchButton.textContent = t("header_search");
+    this.controlsButton.textContent = t("header_controls_hint");
     this.filterButton.textContent = t("header_filter");
     this.filterButton.title = this.isFilterOpen()
       ? t("header_filter_close")
